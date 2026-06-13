@@ -1,0 +1,61 @@
+# Construye el sitio con Vite y lo publica en GitHub Pages.
+# Requiere secrets: VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY (Settings → Secrets → Actions).
+
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Base path para GitHub Pages
+        shell: bash
+        run: |
+          NAME="${{ github.event.repository.name }}"
+          OWNER="${{ github.repository_owner }}"
+          if [ "$NAME" = "$OWNER.github.io" ]; then
+            echo "Sitio de usuario: base /"
+            echo "VITE_BASE_PATH=/" >> "$GITHUB_ENV"
+          else
+            echo "Proyecto en subcarpeta: base /${NAME}/"
+            echo "VITE_BASE_PATH=/${NAME}/" >> "$GITHUB_ENV"
+          fi
+
+      - run: npm ci
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
