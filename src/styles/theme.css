@@ -1,0 +1,119 @@
+/**
+ * Catálogo de color — Pollos Manager (granja / avícola).
+ * Modo oscuro: :root[data-theme="dark"] (controlado desde la app).
+ */
+:root {
+  /* Marca: verdes granja + acento huevo/paja */
+  --pm-brand-900: #0f2918;
+  --pm-brand-800: #1b4332;
+  --pm-brand-700: #2d6a4f;
+  --pm-brand-600: #40916c;
+  --pm-brand-500: #52b788;
+  --pm-brand-100: #d8f3dc;
+  --pm-brand-50: #f1faee;
+
+  --pm-accent-700: #9a6b1a;
+  --pm-accent-500: #d4a017;
+  --pm-accent-300: #e9c46a;
+  --pm-accent-100: #fef3d1;
+
+  --pm-bg-app: #eef2ec;
+  --pm-bg-elevated: #ffffff;
+  --pm-bg-muted: #f4f7f4;
+  --pm-bg-header: linear-gradient(135deg, var(--pm-brand-800) 0%, var(--pm-brand-700) 55%, #1e5c40 100%);
+
+  --pm-text: #1a2e24;
+  --pm-text-muted: #5c6f63;
+  --pm-text-on-brand: #ffffff;
+
+  --pm-border: #d8e0d8;
+  --pm-border-strong: #b8c9b8;
+  --pm-shadow-sm: 0 2px 8px rgba(15, 41, 24, 0.06);
+  --pm-shadow-md: 0 8px 24px rgba(15, 41, 24, 0.08);
+  --pm-shadow-card-hover: 0 4px 20px rgba(15, 41, 24, 0.07);
+  --pm-radius-sm: 10px;
+  --pm-radius-md: 14px;
+  --pm-radius-lg: 18px;
+
+  --pm-success: #2d6a4f;
+  --pm-success-bg: #d8f3dc;
+  --pm-danger: #b91c1c;
+  --pm-danger-hover: #991b1b;
+  --pm-warning: #b45309;
+
+  --pm-nav-mobile-bg: var(--pm-bg-elevated);
+  --pm-nav-mobile-border: var(--pm-border);
+  --pm-nav-desktop-bg: var(--pm-bg-muted);
+  --pm-nav-active: var(--pm-brand-700);
+  --pm-nav-active-contrast: #fff;
+
+  --pm-chart-primary: #2d6a4f;
+  --pm-chart-secondary: #40916c;
+  --pm-chart-accent: #bc8c2b;
+
+  --pm-focus-ring: rgba(45, 106, 79, 0.35);
+
+  --pm-header-status-ok: rgba(255, 255, 255, 0.94);
+  --pm-header-status-err: #fecaca;
+
+  --pm-space-xs: 6px;
+  --pm-space-sm: 10px;
+  --pm-space-md: 14px;
+  --pm-space-lg: 40px;
+  --pm-space-xl: 50px;
+
+  --pm-nav-mobile-height: 68px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --pm-brand-900: #e8f5ef;
+  --pm-brand-800: #b8e0c8;
+  --pm-brand-700: #7ecf9a;
+  --pm-brand-600: #52b788;
+  --pm-brand-500: #40916c;
+  --pm-brand-100: #1a3328;
+  --pm-brand-50: #13261d;
+
+  --pm-accent-700: #f0d78e;
+  --pm-accent-500: #e9c46a;
+  --pm-accent-300: #bc8c2b;
+  --pm-accent-100: #3d3318;
+
+  --pm-bg-app: #0a1210;
+  --pm-bg-elevated: #121f1a;
+  --pm-bg-muted: #182923;
+  --pm-bg-header: linear-gradient(135deg, #0d1f17 0%, #152a20 45%, #1b3628 100%);
+
+  --pm-text: #e8f0ec;
+  --pm-text-muted: #9eb0a5;
+  --pm-text-on-brand: #f4faf7;
+
+  --pm-border: #2a3f34;
+  --pm-border-strong: #3d5247;
+  --pm-shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.35);
+  --pm-shadow-md: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --pm-shadow-card-hover: 0 8px 28px rgba(0, 0, 0, 0.4);
+
+  --pm-success: #6ee7b7;
+  --pm-success-bg: #14532d;
+  --pm-danger: #f87171;
+  --pm-danger-hover: #fca5a5;
+  --pm-warning: #fbbf24;
+
+  --pm-nav-mobile-bg: #121f1a;
+  --pm-nav-mobile-border: var(--pm-border);
+  --pm-nav-desktop-bg: #182923;
+  --pm-nav-active: #40916c;
+  --pm-nav-active-contrast: #041109;
+
+  --pm-chart-primary: #6ee7b7;
+  --pm-chart-secondary: #52b788;
+  --pm-chart-accent: #e9c46a;
+
+  --pm-focus-ring: rgba(110, 231, 183, 0.45);
+
+  --pm-header-status-ok: #a7f3d0;
+  --pm-header-status-err: #fca5a5;
+}

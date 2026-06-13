@@ -1,0 +1,8 @@
+# Configuración mínima para Edge Functions (opcional si usas Supabase CLI).
+# Despliegue: supabase functions deploy invite-user
+# Secretos: supabase secrets set SUPABASE_SERVICE_ROLE_KEY="<service_role>"
+# Opcional (debe coincidir con app_metadata.role del admin y con public.is_app_admin en SQL):
+#           supabase secrets set ADMIN_APP_ROLE="admin"
+
+[functions.invite-user]
+verify_jwt = true

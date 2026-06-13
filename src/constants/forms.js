@@ -1,0 +1,18 @@
+export const expenseCategories = [
+  'Compra de Pollos',
+  'Alimento',
+  'Medicamentos',
+  'Vitaminas',
+  'Desparasitante',
+  'Transporte',
+  'Materiales',
+  'Agua',
+  'Cal',
+  'Bolsas',
+  'Mano de obra',
+  'Gasolina',
+  'Mantenimiento',
+  'Comedero',
+  'Bebedero',
+  'Otros',
+];

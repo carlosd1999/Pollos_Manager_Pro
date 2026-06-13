@@ -1,0 +1,929 @@
+import { useEffect, useMemo, useState } from 'react';
+import dayjs from 'dayjs';
+import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx';
+import { createInitialForm, TABLES } from '../constants/app';
+import { formatColones } from '../lib/formatCurrency';
+import {
+  calculateAvailableByLote,
+  calculateGlobalStats,
+  computeCurrentCycle,
+  effectivePaidVenta,
+  EXPENSE_CATEGORY_PURCHASE,
+  nextCicloNumero,
+  nextLoteNumber,
+} from '../lib/business';
+import { supabase } from '../lib/supabase';
+import {
+  closeCiclo,
+  createAbono,
+  createCiclo,
+  createCliente,
+  createGasto,
+  createLote,
+  createMortalidad,
+  createVenta,
+  deleteAbono,
+  deleteCliente,
+  deleteGasto,
+  deleteLote,
+  deleteMortalidad,
+  deleteVenta,
+  fetchTable,
+  recalculateVentaEstado,
+  updateCliente,
+  updateGasto,
+  updateMortalidad,
+  updateVenta,
+} from '../services/pollosService';
+import {
+  validateAbonoForm,
+  validateCliente,
+  validateGasto,
+  validateMortalidad,
+  validatePrimerAbono,
+  validateVenta,
+  validateVentaMetodoPago,
+} from '../validators/operacionesValidators';
+import { roundedVentaTotalAndPrecioKg } from '../lib/ventaPricing';
+
+const COLORS = [
+  "#1f77b4", // azul
+  "#ff7f0e", // naranja
+  "#2ca02c", // verde
+  "#d62728", // rojo
+  "#9467bd", // morado
+  "#8c564b", // café
+  "#e377c2", // rosado fuerte
+  "#7f7f7f", // gris
+  "#bcbd22", // verde oliva
+  "#17becf", // celeste
+  "#393b79", // azul oscuro
+  "#637939", // verde oscuro
+  "#8c6d31", // mostaza
+  "#843c39", // rojo oscuro
+  "#7b4173", // púrpura oscuro
+  "#3182bd", // azul vivo
+  "#e6550d", // naranja fuerte
+  "#31a354", // verde brillante
+  "#756bb1", // violeta
+  "#636363", // gris oscuro
+];
+
+export function usePollosManager(user) {
+  const [tab, setTab] = useState('dashboard');
+  const [data, setData] = useState({
+    ciclos: [],
+    lotes: [],
+    mortalidad: [],
+    gastos: [],
+    ventas: [],
+    clientes: [],
+    abonos: [],
+  });
+  const [form, setForm] = useState(createInitialForm);
+  const [status, setStatus] = useState('');
+  const [statusType, setStatusType] = useState('info');
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [editingGastoId, setEditingGastoId] = useState(null);
+  const [editingVentaId, setEditingVentaId] = useState(null);
+  const [editingMortalidadId, setEditingMortalidadId] = useState(null);
+  const [editingClienteId, setEditingClienteId] = useState(null);
+  /** '' = ver todos los ciclos en listas y métricas; id = filtrar por ese ciclo */
+  const [vistaCicloId, setVistaCicloId] = useState('');
+
+  const clearEditing = () => {
+    setEditingGastoId(null);
+    setEditingVentaId(null);
+    setEditingMortalidadId(null);
+    setEditingClienteId(null);
+  };
+
+  const resetForm = () => {
+    setForm(createInitialForm());
+    setFieldErrors({});
+  };
+
+  const setErrorStatus = (message) => {
+    setStatus(message);
+    setStatusType('error');
+  };
+
+  const setSuccessStatus = (message) => {
+    setStatus(message);
+    setStatusType('success');
+  };
+
+  const inputClass = (fieldKey) => (fieldErrors[fieldKey] ? 'input-error' : '');
+
+  const readAll = async () => {
+    if (!supabase || !user) return;
+    const results = await Promise.all(TABLES.map((table) => fetchTable(table)));
+    const firstError = results.find((result) => result.error)?.error;
+    if (firstError) {
+      setErrorStatus(`Error cargando datos: ${firstError.message}`);
+      return;
+    }
+    const next = {};
+    TABLES.forEach((table, index) => {
+      next[table] = results[index].data || [];
+    });
+    setData(next);
+  };
+
+  useEffect(() => {
+    readAll();
+    if (!supabase || !user) return;
+    const channel = supabase.channel('pollos-realtime');
+    TABLES.forEach((table) => channel.on('postgres_changes', { event: '*', schema: 'public', table }, readAll));
+    channel.subscribe();
+    return () => void supabase.removeChannel(channel);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (editingGastoId) return;
+    if (form.gasto.ciclo_id) return;
+    const activos = (data.ciclos || []).filter((c) => c.estado === 'activo');
+    if (activos.length !== 1) return;
+    setForm((p) => ({ ...p, gasto: { ...p.gasto, ciclo_id: String(activos[0].id) } }));
+  }, [data.ciclos, editingGastoId, form.gasto.ciclo_id]);
+
+  const lotesWithAvailability = useMemo(
+    () => calculateAvailableByLote(data.lotes, data.mortalidad, data.ventas),
+    [data.lotes, data.mortalidad, data.ventas],
+  );
+  const stats = useMemo(() => calculateGlobalStats(data), [data]);
+
+  const dataVista = useMemo(() => {
+    if (!vistaCicloId) return data;
+    const cid = Number(vistaCicloId);
+    const ventas = data.ventas.filter((v) => Number(v.ciclo_id) === cid);
+    const ventaIds = new Set(ventas.map((v) => v.id));
+    const lotes = data.lotes.filter((l) => Number(l.ciclo_id) === cid);
+    const loteIds = new Set(lotes.map((l) => l.id));
+    return {
+      ...data,
+      ciclos: data.ciclos.filter((c) => Number(c.id) === cid),
+      gastos: data.gastos.filter((g) => Number(g.ciclo_id) === cid),
+      ventas,
+      abonos: data.abonos.filter((a) => ventaIds.has(Number(a.venta_id))),
+      lotes,
+      mortalidad: data.mortalidad.filter((m) => loteIds.has(Number(m.lote_id))),
+    };
+  }, [data, vistaCicloId]);
+
+  const lotesWithAvailabilityVista = useMemo(() => {
+    if (!vistaCicloId) return lotesWithAvailability;
+    const cid = Number(vistaCicloId);
+    return lotesWithAvailability.filter((l) => Number(l.ciclo_id) === cid);
+  }, [lotesWithAvailability, vistaCicloId]);
+
+  /** Lotes en formularios de venta/mortalidad: respeta filtro de vista e incluye el lote al editar aunque no coincida */
+  const lotesWithAvailabilityOperaciones = useMemo(() => {
+    if (!vistaCicloId) return lotesWithAvailability;
+    const cid = Number(vistaCicloId);
+    let list = lotesWithAvailability.filter((l) => Number(l.ciclo_id) === cid);
+    if (editingVentaId) {
+      const v = data.ventas.find((x) => x.id === editingVentaId);
+      if (v && !list.some((l) => l.id === v.lote_id)) {
+        const extra = lotesWithAvailability.find((l) => l.id === v.lote_id);
+        if (extra) list = [extra, ...list];
+      }
+    }
+    if (editingMortalidadId) {
+      const m = data.mortalidad.find((x) => x.id === editingMortalidadId);
+      if (m && !list.some((l) => l.id === m.lote_id)) {
+        const extra = lotesWithAvailability.find((l) => l.id === m.lote_id);
+        if (extra) list = [extra, ...list];
+      }
+    }
+    return list;
+  }, [
+    vistaCicloId,
+    lotesWithAvailability,
+    editingVentaId,
+    editingMortalidadId,
+    data.ventas,
+    data.mortalidad,
+  ]);
+
+  const statsVista = useMemo(() => {
+    if (!vistaCicloId) return stats;
+    const cid = Number(vistaCicloId);
+    const ciclos = data.ciclos.filter((c) => Number(c.id) === cid);
+    const lotes = data.lotes.filter((l) => Number(l.ciclo_id) === cid);
+    const gastos = data.gastos.filter((g) => Number(g.ciclo_id) === cid);
+    const ventas = data.ventas.filter((v) => Number(v.ciclo_id) === cid);
+    const loteIds = new Set(lotes.map((l) => l.id));
+    const mortalidad = data.mortalidad.filter((m) => loteIds.has(Number(m.lote_id)));
+    return calculateGlobalStats({ ciclos, lotes, gastos, ventas, mortalidad });
+  }, [vistaCicloId, data, stats]);
+
+  const gastoPorCategoria = useMemo(
+    () =>
+      Object.values(
+        data.gastos.reduce((acc, item, index) => {
+          const key = item.categoria || 'Otros';
+          acc[key] = {
+            categoria: key,
+            total: (acc[key]?.total || 0) + Number(item.monto || 0),
+            fill: COLORS[index % COLORS.length],
+          };
+          return acc;
+        }, {}),
+      ),
+    [data.gastos],
+  );
+
+  const gastoPorCategoriaVista = useMemo(() => {
+    const gastos = vistaCicloId
+      ? data.gastos.filter((g) => Number(g.ciclo_id) === Number(vistaCicloId))
+      : data.gastos;
+    return Object.values(
+      gastos.reduce((acc, item, index) => {
+        const key = item.categoria || 'Otros';
+        acc[key] = {
+          categoria: key,
+          total: (acc[key]?.total || 0) + Number(item.monto || 0),
+          fill: COLORS[index % COLORS.length],
+        };
+        return acc;
+      }, {}),
+    );
+  }, [data.gastos, vistaCicloId]);
+
+  const utilidadPorCiclo = useMemo(
+    () =>
+      data.ciclos.map((ciclo) => {
+        const ventas = data.ventas
+          .filter((v) => data.lotes.some((l) => l.id === v.lote_id && l.ciclo_id === ciclo.id))
+          .reduce((sum, v) => sum + Number(v.total_venta || 0), 0);
+        const gastos = data.gastos.filter((g) => g.ciclo_id === ciclo.id).reduce((sum, g) => sum + Number(g.monto || 0), 0);
+        return { name: `Ciclo ${ciclo.numero}`, utilidad: ventas - gastos };
+      }),
+    [data],
+  );
+
+  const utilidadPorCicloVista = useMemo(() => {
+    if (!vistaCicloId) return utilidadPorCiclo;
+    const c = data.ciclos.find((x) => Number(x.id) === Number(vistaCicloId));
+    if (!c) return [];
+    const row = utilidadPorCiclo.find((u) => u.name === `Ciclo ${c.numero}`);
+    return row ? [row] : [];
+  }, [vistaCicloId, utilidadPorCiclo, data.ciclos]);
+
+  const vistaCicloLabel = useMemo(() => {
+    if (!vistaCicloId) return null;
+    const c = data.ciclos.find((x) => Number(x.id) === Number(vistaCicloId));
+    return c ? `Ciclo ${c.numero}` : null;
+  }, [vistaCicloId, data.ciclos]);
+
+  const createCycleIfNeeded = async () => {
+    const current = computeCurrentCycle(data.ciclos);
+    if (!current) {
+      const { data: inserted, error } = await createCiclo({
+        user_id: user.id,
+        numero: nextCicloNumero(data.ciclos),
+        fecha_inicio: dayjs().format('YYYY-MM-DD'),
+        estado: 'activo',
+      });
+      if (error) throw new Error(error.message);
+      return inserted;
+    }
+    return current;
+  };
+
+  const handleGasto = async () => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    try {
+      if (editingGastoId) {
+        const existing = data.gastos.find((g) => g.id === editingGastoId);
+        if (!existing) return setErrorStatus('Gasto no encontrado');
+        const gastoForm = {
+          ...form.gasto,
+          categoria: existing.lote_id ? EXPENSE_CATEGORY_PURCHASE : form.gasto.categoria,
+          ciclo_id: existing.ciclo_id != null ? String(existing.ciclo_id) : '',
+        };
+        const { errors, parsedAmount } = validateGasto(gastoForm);
+        if (Object.keys(errors).length > 0) {
+          setFieldErrors(errors);
+          return setErrorStatus('Corrige los campos en rojo');
+        }
+        setFieldErrors({});
+        const { error: gastoError } = await updateGasto(editingGastoId, {
+          fecha: gastoForm.fecha,
+          monto: parsedAmount,
+          categoria: gastoForm.categoria,
+          detalle: gastoForm.detalle?.trim() || null,
+          ciclo_id: existing.ciclo_id,
+          lote_id: existing.lote_id,
+        });
+        if (gastoError) throw new Error(gastoError.message);
+        await readAll();
+        resetForm();
+        clearEditing();
+        setSuccessStatus('Gasto actualizado correctamente');
+        return;
+      }
+      const { errors, parsedAmount } = validateGasto(form.gasto, { skipCiclo: data.ciclos.length === 0 });
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        return setErrorStatus('Corrige los campos en rojo');
+      }
+      setFieldErrors({});
+
+      let cycleId;
+      if (data.ciclos.length === 0) {
+        const inserted = await createCycleIfNeeded();
+        cycleId = inserted.id;
+      } else {
+        cycleId = Number(form.gasto.ciclo_id);
+        if (!Number.isFinite(cycleId) || cycleId <= 0) {
+          setFieldErrors({ 'gasto.ciclo_id': 'Selecciona un ciclo' });
+          return setErrorStatus('Selecciona el ciclo donde registrar este gasto.');
+        }
+        if (!data.ciclos.some((c) => Number(c.id) === cycleId)) {
+          return setErrorStatus('El ciclo seleccionado no existe. Recarga los datos.');
+        }
+      }
+
+      const expensePayload = { ...form.gasto, monto: parsedAmount, ciclo_id: cycleId, user_id: user.id };
+
+      if (form.gasto.categoria === EXPENSE_CATEGORY_PURCHASE) {
+        const loteNumero = nextLoteNumber(data.lotes, cycleId);
+        const cantidadComprada = Number(form.gasto.cantidad_pollos);
+        const { data: lote, error: loteError } = await createLote({
+          user_id: user.id,
+          ciclo_id: cycleId,
+          numero_lote: loteNumero,
+          fecha_ingreso: form.gasto.fecha,
+          cantidad_comprada: cantidadComprada,
+          precio_compra: parsedAmount,
+          precio_unitario: cantidadComprada ? parsedAmount / cantidadComprada : 0,
+          semana_ciclo: loteNumero,
+          estado: 'activo',
+        });
+        if (loteError) throw new Error(loteError.message);
+        expensePayload.lote_id = lote.id;
+      }
+
+      delete expensePayload.cantidad_pollos;
+      const { error: gastoError } = await createGasto(expensePayload);
+      if (gastoError) throw new Error(gastoError.message);
+      await readAll();
+      resetForm();
+      setSuccessStatus('Gasto registrado correctamente');
+    } catch (error) {
+      setErrorStatus(`No se pudo guardar el gasto: ${error.message}`);
+    }
+  };
+
+  const handleVenta = async () => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    try {
+      const venta = form.venta;
+      const lote = lotesWithAvailability.find((item) => item.id === Number(venta.lote_id));
+      const editingVenta = editingVentaId ? data.ventas.find((v) => v.id === editingVentaId) : null;
+      const { errors, cantidad, pesoTotal, precioKg } = validateVenta(venta, lote, { editingVenta });
+      const { totalVenta, precioKg: precioKgRedondeado } = roundedVentaTotalAndPrecioKg(pesoTotal, precioKg);
+      if (totalVenta < 25) {
+        setFieldErrors({
+          ...errors,
+          'venta.precio_kg': 'El total redondeado debe ser al menos ₡25; aumenta peso o precio por kg.',
+        });
+        return setErrorStatus('El total de la venta redondeado es demasiado bajo.');
+      }
+      const { errors: pe, primer } = validatePrimerAbono(venta.primerAbono, totalVenta, venta.pagoCompleto);
+      const { errors: me } = validateVentaMetodoPago(venta, primer);
+      const merged = { ...errors, ...pe, ...me };
+      if (Object.keys(merged).length > 0) {
+        setFieldErrors(merged);
+        return setErrorStatus('Corrige los campos en rojo');
+      }
+      setFieldErrors({});
+      const pesoPromedio = pesoTotal / cantidad;
+      const precioKgDb = Number(Number(precioKgRedondeado).toFixed(6));
+
+      if (editingVentaId) {
+        const existing = data.ventas.find((v) => v.id === editingVentaId);
+        if (!existing) return setErrorStatus('Venta no encontrada');
+        const paid = effectivePaidVenta(existing, data.abonos);
+        if (totalVenta + 1e-6 < paid) {
+          return setErrorStatus('El total de la venta no puede ser menor al monto ya cobrado (abonos o pagos registrados).');
+        }
+        const abonosDeEsta = (data.abonos || []).filter((a) => Number(a.venta_id) === Number(editingVentaId));
+        const onlyLegacyPaid =
+          abonosDeEsta.length === 0 && existing.estado_pago === 'pagado';
+        const updatePayload = {
+          fecha: venta.fecha,
+          cliente_id: Number(venta.cliente_id),
+          lote_id: Number(venta.lote_id),
+          ciclo_id: existing.ciclo_id,
+          cantidad,
+          peso_total: pesoTotal,
+          peso_promedio: pesoPromedio,
+          precio_kg: precioKgDb,
+          total_venta: totalVenta,
+          metodo_pago: venta.metodo_pago || null,
+        };
+        if (onlyLegacyPaid) {
+          updatePayload.monto_cancelado = totalVenta;
+          updatePayload.saldo_pendiente = 0;
+          updatePayload.estado_pago = 'pagado';
+        }
+        const { error: ventaError } = await updateVenta(editingVentaId, updatePayload);
+        if (ventaError) throw new Error(ventaError.message);
+        const { error: recErr } = await recalculateVentaEstado(editingVentaId);
+        if (recErr) throw new Error(recErr.message);
+        await readAll();
+        resetForm();
+        clearEditing();
+        setSuccessStatus('Venta actualizada correctamente');
+        return;
+      }
+
+      const base = {
+        user_id: user.id,
+        fecha: venta.fecha,
+        lote_id: Number(venta.lote_id),
+        cliente_id: Number(venta.cliente_id),
+        ciclo_id: lote.ciclo_id,
+        cantidad,
+        peso_total: pesoTotal,
+        peso_promedio: pesoPromedio,
+        precio_kg: precioKgDb,
+        total_venta: totalVenta,
+        metodo_pago: venta.pagoCompleto ? venta.metodo_pago || null : null,
+      };
+
+      if (venta.pagoCompleto) {
+        base.monto_cancelado = totalVenta;
+        base.saldo_pendiente = 0;
+        base.estado_pago = 'pagado';
+      } else {
+        base.monto_cancelado = 0;
+        base.saldo_pendiente = totalVenta;
+        base.estado_pago = 'pendiente';
+      }
+
+      const { data: inserted, error: ventaError } = await createVenta(base);
+      if (ventaError) throw new Error(ventaError.message);
+      if (!venta.pagoCompleto && primer > 0) {
+        const { error: abErr } = await createAbono({
+          user_id: user.id,
+          venta_id: inserted.id,
+          fecha: venta.fecha,
+          monto: primer,
+          metodo_pago: venta.metodo_pago || null,
+          observaciones: null,
+        });
+        if (abErr) throw new Error(abErr.message);
+        const { error: recErr } = await recalculateVentaEstado(inserted.id);
+        if (recErr) throw new Error(recErr.message);
+      }
+      await readAll();
+      resetForm();
+      setSuccessStatus(
+        venta.pagoCompleto
+          ? 'Venta registrada (pago completo)'
+          : primer > 0
+            ? 'Venta registrada con abono inicial'
+            : 'Venta registrada a crédito — registra abonos cuando el cliente pague',
+      );
+    } catch (error) {
+      setErrorStatus(`No se pudo guardar la venta: ${error.message}`);
+    }
+  };
+
+  const handleMortalidad = async () => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    try {
+      if (editingMortalidadId) {
+        const existing = data.mortalidad.find((m) => m.id === editingMortalidadId);
+        if (!existing) return setErrorStatus('Registro de mortalidad no encontrado');
+        const { errors, cantidad } = validateMortalidad(form.mortalidad);
+        if (Object.keys(errors).length > 0) {
+          setFieldErrors(errors);
+          return setErrorStatus('Corrige los campos en rojo');
+        }
+        setFieldErrors({});
+        const { error } = await updateMortalidad(editingMortalidadId, {
+          fecha: form.mortalidad.fecha,
+          lote_id: existing.lote_id,
+          cantidad,
+          motivo: form.mortalidad.motivo?.trim() || null,
+        });
+        if (error) throw new Error(error.message);
+        await readAll();
+        resetForm();
+        clearEditing();
+        setSuccessStatus('Mortalidad actualizada correctamente');
+        return;
+      }
+      const { errors, cantidad } = validateMortalidad(form.mortalidad);
+      if (Object.keys(errors).length > 0) {
+        setFieldErrors(errors);
+        return setErrorStatus('Corrige los campos en rojo');
+      }
+      setFieldErrors({});
+      const { error } = await createMortalidad({
+        ...form.mortalidad,
+        user_id: user.id,
+        lote_id: Number(form.mortalidad.lote_id),
+        cantidad,
+      });
+      if (error) throw new Error(error.message);
+      await readAll();
+      resetForm();
+      setSuccessStatus('Mortalidad registrada correctamente');
+    } catch (error) {
+      setErrorStatus(`No se pudo guardar la mortalidad: ${error.message}`);
+    }
+  };
+
+  const handleCliente = async () => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    const { errors } = validateCliente(form.cliente);
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return setErrorStatus('Corrige los campos en rojo');
+    }
+    try {
+      setFieldErrors({});
+      if (editingClienteId) {
+        const { error } = await updateCliente(editingClienteId, {
+          nombre: form.cliente.nombre.trim(),
+          telefono: form.cliente.telefono.trim(),
+          direccion: form.cliente.direccion.trim(),
+        });
+        if (error) throw new Error(error.message);
+        await readAll();
+        resetForm();
+        clearEditing();
+        setSuccessStatus('Cliente actualizado correctamente');
+        return;
+      }
+      const { error } = await createCliente({
+        user_id: user.id,
+        nombre: form.cliente.nombre.trim(),
+        telefono: form.cliente.telefono.trim(),
+        direccion: form.cliente.direccion.trim(),
+      });
+      if (error) throw new Error(error.message);
+      await readAll();
+      resetForm();
+      setSuccessStatus('Cliente registrado correctamente');
+    } catch (error) {
+      setErrorStatus(`No se pudo guardar el cliente: ${error.message}`);
+    }
+  };
+
+  const startEditGasto = (g) => {
+    const lote = data.lotes.find((l) => l.id === g.lote_id);
+    setForm({
+      ...createInitialForm(),
+      gasto: {
+        fecha: g.fecha,
+        monto: String(g.monto),
+        categoria: g.categoria,
+        detalle: g.detalle || '',
+        cantidad_pollos:
+          g.categoria === EXPENSE_CATEGORY_PURCHASE && lote ? String(lote.cantidad_comprada) : '',
+        ciclo_id: g.ciclo_id != null ? String(g.ciclo_id) : '',
+      },
+    });
+    clearEditing();
+    setEditingGastoId(g.id);
+    setFieldErrors({});
+    setStatus('');
+  };
+
+  const startEditVenta = (v) => {
+    setForm({
+      ...createInitialForm(),
+      venta: {
+        fecha: v.fecha,
+        cliente_id: v.cliente_id != null ? String(v.cliente_id) : '',
+        lote_id: v.lote_id != null ? String(v.lote_id) : '',
+        cantidad: String(v.cantidad),
+        peso_total: v.peso_total != null ? String(v.peso_total) : '',
+        precio_kg: v.precio_kg != null ? String(v.precio_kg) : '2500',
+        total_redondeado: v.total_venta != null ? Number(v.total_venta) : '',
+        metodo_pago: v.metodo_pago || '',
+        pagoCompleto: false,
+        primerAbono: '',
+      },
+    });
+    clearEditing();
+    setEditingVentaId(v.id);
+    setFieldErrors({});
+    setStatus('');
+  };
+
+  const startEditMortalidad = (m) => {
+    setForm({
+      ...createInitialForm(),
+      mortalidad: {
+        fecha: m.fecha,
+        lote_id: m.lote_id != null ? String(m.lote_id) : '',
+        cantidad: String(m.cantidad),
+        motivo: m.motivo || '',
+      },
+    });
+    clearEditing();
+    setEditingMortalidadId(m.id);
+    setFieldErrors({});
+    setStatus('');
+  };
+
+  const startEditCliente = (c) => {
+    setForm({
+      ...createInitialForm(),
+      cliente: {
+        nombre: c.nombre || '',
+        telefono: c.telefono || '',
+        direccion: c.direccion || '',
+      },
+    });
+    clearEditing();
+    setEditingClienteId(c.id);
+    setFieldErrors({});
+    setStatus('');
+  };
+
+  const cancelOperacionesEdit = () => {
+    resetForm();
+    clearEditing();
+  };
+
+  const confirmDeleteGasto = async (id) => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    const gasto = data.gastos.find((g) => g.id === id);
+    let msg = '¿Eliminar este gasto? Esta acción no se puede deshacer.';
+    if (gasto?.categoria === EXPENSE_CATEGORY_PURCHASE && gasto?.lote_id) {
+      const ventasEnLote = data.ventas.filter((v) => Number(v.lote_id) === Number(gasto.lote_id)).length;
+      msg =
+        ventasEnLote > 0
+          ? '¿Eliminar este gasto? El lote de esa compra tiene ventas registradas: el gasto se borrará, pero el lote seguirá existiendo hasta que elimines esas ventas.'
+          : '¿Eliminar este gasto y el lote de compra asociado? Esta acción no se puede deshacer.';
+    }
+    if (!window.confirm(msg)) return;
+    try {
+      const { error } = await deleteGasto(id);
+      if (error) throw new Error(error.message);
+      if (editingGastoId === id) {
+        resetForm();
+        clearEditing();
+      }
+      if (gasto?.categoria === EXPENSE_CATEGORY_PURCHASE && gasto?.lote_id) {
+        const { error: loteError } = await deleteLote(gasto.lote_id);
+        if (loteError) {
+          await readAll();
+          setErrorStatus(
+            `Gasto eliminado. No se pudo eliminar el lote: ${loteError.message}. Si hay ventas o registros que lo usan, elimínalos primero.`,
+          );
+          return;
+        }
+      }
+      await readAll();
+      setSuccessStatus(
+        gasto?.categoria === EXPENSE_CATEGORY_PURCHASE && gasto?.lote_id
+          ? 'Gasto y lote eliminados correctamente'
+          : 'Gasto eliminado',
+      );
+    } catch (error) {
+      setErrorStatus(`No se pudo eliminar: ${error.message}`);
+    }
+  };
+
+  const confirmDeleteVenta = async (id) => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!window.confirm('¿Eliminar esta venta? Esta acción no se puede deshacer.')) return;
+    try {
+      const { error } = await deleteVenta(id);
+      if (error) throw new Error(error.message);
+      if (editingVentaId === id) {
+        resetForm();
+        clearEditing();
+      }
+      await readAll();
+      setSuccessStatus('Venta eliminada');
+    } catch (error) {
+      setErrorStatus(`No se pudo eliminar: ${error.message}`);
+    }
+  };
+
+  const confirmDeleteMortalidad = async (id) => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!window.confirm('¿Eliminar este registro de mortalidad? Esta acción no se puede deshacer.')) return;
+    try {
+      const { error } = await deleteMortalidad(id);
+      if (error) throw new Error(error.message);
+      if (editingMortalidadId === id) {
+        resetForm();
+        clearEditing();
+      }
+      await readAll();
+      setSuccessStatus('Mortalidad eliminada');
+    } catch (error) {
+      setErrorStatus(`No se pudo eliminar: ${error.message}`);
+    }
+  };
+
+  const confirmDeleteCliente = async (id) => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!window.confirm('¿Eliminar este cliente? No podrá eliminarse si tiene ventas asociadas.')) return;
+    try {
+      const { error } = await deleteCliente(id);
+      if (error) throw new Error(error.message);
+      if (editingClienteId === id) {
+        resetForm();
+        clearEditing();
+      }
+      await readAll();
+      setSuccessStatus('Cliente eliminado');
+    } catch (error) {
+      setErrorStatus(`No se pudo eliminar: ${error.message}`);
+    }
+  };
+
+  const submitAbono = async (ventaId, payload) => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    try {
+      const { errors, monto } = validateAbonoForm(payload);
+      if (Object.keys(errors).length > 0) {
+        setErrorStatus(Object.values(errors)[0] || 'Revisa el formulario del abono.');
+        return;
+      }
+      const venta = data.ventas.find((x) => x.id === ventaId);
+      if (!venta) return setErrorStatus('Venta no encontrada');
+      const abonosDeVenta = data.abonos.filter((a) => Number(a.venta_id) === Number(ventaId));
+      const total = Number(venta.total_venta || 0);
+      const paid = effectivePaidVenta(venta, data.abonos);
+      if (abonosDeVenta.length === 0 && paid >= total - 1e-6 && total > 0) {
+        return setErrorStatus(
+          'Esta venta figura como pagada al contado. Para llevar abonos, la venta debe estar a crédito sin ese pago único.',
+        );
+      }
+      if (paid + monto > total + 1e-6) {
+        return setErrorStatus('El abono supera el saldo pendiente de la venta.');
+      }
+      const { error } = await createAbono({
+        user_id: user.id,
+        venta_id: ventaId,
+        fecha: payload.fecha,
+        monto,
+        metodo_pago: payload.metodo_pago || null,
+        observaciones: payload.observaciones?.trim() || null,
+      });
+      if (error) throw new Error(error.message);
+      const { error: re } = await recalculateVentaEstado(ventaId);
+      if (re) throw new Error(re.message);
+      await readAll();
+      setSuccessStatus('Abono registrado');
+    } catch (error) {
+      setErrorStatus(error.message);
+    }
+  };
+
+  const confirmDeleteAbono = async (abonoId, ventaId) => {
+    if (!window.confirm('¿Eliminar este abono?')) return;
+    try {
+      const { error } = await deleteAbono(abonoId);
+      if (error) throw new Error(error.message);
+      const { error: re } = await recalculateVentaEstado(ventaId);
+      if (re) throw new Error(re.message);
+      await readAll();
+      setSuccessStatus('Abono eliminado');
+    } catch (error) {
+      setErrorStatus(error.message);
+    }
+  };
+
+  const cerrarCicloPorId = async (cicloId) => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    const ciclo = data.ciclos.find((c) => Number(c.id) === Number(cicloId));
+    if (!ciclo) return setErrorStatus('Ciclo no encontrado.');
+    if (ciclo.estado !== 'activo') return setErrorStatus('Ese ciclo ya está cerrado.');
+    if (
+      !window.confirm(
+        `¿Cerrar el ciclo ${ciclo.numero}? Podrás seguir viendo sus datos; para registrar gastos nuevos en otro ciclo, usa un ciclo activo o abre uno nuevo.`,
+      )
+    )
+      return;
+    try {
+      const { error } = await closeCiclo(ciclo.id, {
+        estado: 'cerrado',
+        fecha_cierre: dayjs().format('YYYY-MM-DD'),
+      });
+      if (error) throw new Error(error.message);
+      await readAll();
+      setSuccessStatus(`Ciclo ${ciclo.numero} cerrado.`);
+    } catch (error) {
+      setErrorStatus(`No se pudo cerrar el ciclo: ${error.message}`);
+    }
+  };
+
+  const abrirNuevoCiclo = async () => {
+    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    try {
+      const { data: inserted, error } = await createCiclo({
+        user_id: user.id,
+        numero: nextCicloNumero(data.ciclos),
+        fecha_inicio: dayjs().format('YYYY-MM-DD'),
+        estado: 'activo',
+      });
+      if (error) throw new Error(error.message);
+      await readAll();
+      setSuccessStatus(
+        inserted
+          ? `Ciclo ${inserted.numero} creado (activo). Elige este ciclo en Gastos si quieres registrar ahí.`
+          : 'Nuevo ciclo creado.',
+      );
+    } catch (error) {
+      setErrorStatus(`No se pudo crear el ciclo: ${error.message}`);
+    }
+  };
+
+  const exportExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const src = vistaCicloId ? dataVista : data;
+    const suffix = vistaCicloId && vistaCicloLabel ? `-${vistaCicloLabel.replace(/\s+/g, '')}` : '';
+    TABLES.forEach((table) =>
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(src[table] || []), table),
+    );
+    XLSX.writeFile(wb, `pollos-reporte${suffix}-${dayjs().format('YYYYMMDD-HHmm')}.xlsx`);
+  };
+
+  const exportPDF = () => {
+    const s = vistaCicloId ? statsVista : stats;
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(
+      vistaCicloId ? `Reporte Gestión Avícola (${vistaCicloLabel || 'ciclo'})` : 'Reporte Gestión Avícola',
+      10,
+      10,
+    );
+    doc.setFontSize(11);
+    doc.text(`Ganancia total: ${formatColones(s.totalUtilidad)}`, 10, 20);
+    doc.text(`Mortalidad general: ${s.mortalidadGeneral.toFixed(2)}%`, 10, 27);
+    doc.text(`Total pollos comprados: ${s.totalComprados}`, 10, 34);
+    doc.save(`pollos-reporte-${dayjs().format('YYYYMMDD-HHmm')}.pdf`);
+  };
+
+  const siguienteLoteCompra = useMemo(() => {
+    const id = Number(form.gasto.ciclo_id);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    return nextLoteNumber(data.lotes, id);
+  }, [form.gasto.ciclo_id, data.lotes]);
+
+  return {
+    tab,
+    setTab,
+    data,
+    form,
+    setForm,
+    status,
+    statusType,
+    fieldErrors,
+    setFieldErrors,
+    inputClass,
+    stats,
+    statsVista,
+    lotesWithAvailability,
+    lotesWithAvailabilityOperaciones,
+    dataVista,
+    gastoPorCategoria,
+    gastoPorCategoriaVista,
+    utilidadPorCiclo,
+    utilidadPorCicloVista,
+    vistaCicloId,
+    setVistaCicloId,
+    vistaCicloLabel,
+    handleGasto,
+    handleCliente,
+    handleVenta,
+    handleMortalidad,
+    exportExcel,
+    exportPDF,
+    purchaseCategory: EXPENSE_CATEGORY_PURCHASE,
+    editingGastoId,
+    editingVentaId,
+    editingMortalidadId,
+    editingClienteId,
+    startEditGasto,
+    startEditVenta,
+    startEditMortalidad,
+    startEditCliente,
+    cancelOperacionesEdit,
+    confirmDeleteGasto,
+    confirmDeleteVenta,
+    confirmDeleteMortalidad,
+    confirmDeleteCliente,
+    submitAbono,
+    confirmDeleteAbono,
+    cerrarCicloPorId,
+    abrirNuevoCiclo,
+    siguienteLoteCompra,
+  };
+}
