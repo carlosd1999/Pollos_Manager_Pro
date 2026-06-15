@@ -17,6 +17,7 @@ export default function MortalidadModule(props) {
     cancelOperacionesEdit,
     startEditMortalidad,
     confirmDeleteMortalidad,
+    formResetGeneration,
   } = props;
 
   return (
@@ -25,12 +26,13 @@ export default function MortalidadModule(props) {
         <MortalidadForm
           form={form}
           setForm={setForm}
-          data={{ ...data, lotes: lotesWithAvailability }}
+          lotesWithAvailability={lotesWithAvailability}
           fieldErrors={fieldErrors}
           inputClass={inputClass}
           setFieldErrors={setFieldErrors}
           handleMortalidad={handleMortalidad}
           editingMortalidadId={editingMortalidadId}
+          formResetGeneration={formResetGeneration}
           onCancelEdit={cancelOperacionesEdit}
         />
       </div>

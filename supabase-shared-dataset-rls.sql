@@ -18,20 +18,24 @@ where p.data_owner_id is null;
 -- ---------------------------------------------------------------------------
 -- 2) Helper para RLS (dueño efectivo del dataset)
 -- ---------------------------------------------------------------------------
+-- SECURITY DEFINER: la lectura de profiles por PK no debe re-entrar a las políticas RLS de
+-- profiles (p. ej. is_app_admin()), o cada fila comprobada en ventas/ciclos/… multiplica
+-- trabajo y puede provocar statement timeout (57014) para usuarios invitados.
 
 create or replace function public.my_data_owner_id()
 returns uuid
 language sql
 stable
-security invoker
+security definer
 set search_path = public
 as $$
   select coalesce(
-    (select pr.data_owner_id from public.profiles pr where pr.id = auth.uid()),
+    (select pr.data_owner_id from public.profiles pr where pr.id = auth.uid() limit 1),
     auth.uid()
   );
 $$;
 
+revoke all on function public.my_data_owner_id() from public;
 grant execute on function public.my_data_owner_id() to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -167,3 +171,15 @@ begin
   return new;
 end;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 6) Índices: filtro RLS por user_id + ORDER BY id desc (fetchTable en la app)
+-- ---------------------------------------------------------------------------
+
+create index if not exists idx_ciclos_user_id_id_desc on public.ciclos (user_id, id desc);
+create index if not exists idx_lotes_user_id_id_desc on public.lotes (user_id, id desc);
+create index if not exists idx_clientes_user_id_id_desc on public.clientes (user_id, id desc);
+create index if not exists idx_gastos_user_id_id_desc on public.gastos (user_id, id desc);
+create index if not exists idx_ventas_user_id_id_desc on public.ventas (user_id, id desc);
+create index if not exists idx_abonos_user_id_id_desc on public.abonos (user_id, id desc);
+create index if not exists idx_mortalidad_user_id_id_desc on public.mortalidad (user_id, id desc);
