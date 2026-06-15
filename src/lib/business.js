@@ -38,6 +38,17 @@ export function nextLoteNumber(lotes, cicloId) {
   return maxNum + 1;
 }
 
+/** Lotes de más antiguo a más reciente: `numero_lote` y desempate por `fecha_ingreso`. */
+export function compareLotesOldestFirst(a, b) {
+  const n = Number(a.numero_lote) - Number(b.numero_lote);
+  if (n !== 0) return n;
+  return String(a.fecha_ingreso || '').localeCompare(String(b.fecha_ingreso || ''));
+}
+
+export function sortLotesOldestFirst(lotes) {
+  return [...(lotes || [])].sort(compareLotesOldestFirst);
+}
+
 export function calculateAvailableByLote(lotes, mortalidad, ventas) {
   const soldByLote = ventas.reduce((acc, venta) => {
     acc[venta.lote_id] = (acc[venta.lote_id] || 0) + Number(venta.cantidad || 0);
@@ -47,11 +58,13 @@ export function calculateAvailableByLote(lotes, mortalidad, ventas) {
     acc[baja.lote_id] = (acc[baja.lote_id] || 0) + Number(baja.cantidad || 0);
     return acc;
   }, {});
-  return lotes.map((lote) => ({
-    ...lote,
-    disponibles:
-      Number(lote.cantidad_comprada || 0) - (soldByLote[lote.id] || 0) - (deadByLote[lote.id] || 0),
-  }));
+  return sortLotesOldestFirst(
+    (lotes || []).map((lote) => ({
+      ...lote,
+      disponibles:
+        Number(lote.cantidad_comprada || 0) - (soldByLote[lote.id] || 0) - (deadByLote[lote.id] || 0),
+    })),
+  );
 }
 
 export function calculateGlobalStats({ ciclos, lotes, gastos, ventas, mortalidad }) {

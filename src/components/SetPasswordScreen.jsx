@@ -13,11 +13,13 @@ function FieldIconLock() {
   );
 }
 
-function SetPasswordScreen({ onDone }) {
+function SetPasswordScreen({ onDone, variant = 'recovery' }) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const isInvite = variant === 'invite';
 
   const submit = async (e) => {
     e?.preventDefault?.();
@@ -33,7 +35,10 @@ function SetPasswordScreen({ onDone }) {
     if (!supabase) return;
     setBusy(true);
     try {
-      const { error: upErr } = await supabase.auth.updateUser({ password });
+      const { error: upErr } = await supabase.auth.updateUser({
+        password,
+        data: { must_complete_password: false },
+      });
       if (upErr) {
         setError(upErr.message);
         return;
@@ -47,9 +52,13 @@ function SetPasswordScreen({ onDone }) {
   return (
     <AuthPageLayout
       title="Nueva contraseña"
-      subtitle="Define una contraseña segura. Luego podrás usar la app con normalidad."
+      subtitle={
+        isInvite
+          ? 'Es tu primer acceso: crea una contraseña para poder iniciar sesión en el futuro.'
+          : 'Define una contraseña segura. Luego podrás usar la app con normalidad.'
+      }
       footer={
-        <p className="auth-footer-note">Enlace de recuperación · Gestión Avícola</p>
+        <p className="auth-footer-note">{isInvite ? 'Invitación · Gestión Avícola' : 'Recuperación de contraseña · Gestión Avícola'}</p>
       }
     >
       <form className="auth-form" onSubmit={submit} noValidate>

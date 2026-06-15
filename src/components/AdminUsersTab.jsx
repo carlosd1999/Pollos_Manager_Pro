@@ -59,7 +59,9 @@ function AdminUsersTab({
         <h2 className="card-title">Invitar usuario</h2>
         <p className="card-sub">
           Supabase enviará un correo para que el usuario defina su contraseña. Requiere la función Edge{' '}
-          <code>invite-user</code> desplegada (carpeta <code>supabase/functions</code> del proyecto).
+          <code>invite-user</code> desplegada. Si ves error de «límite de correos», el SMTP integrado de Supabase
+          permite pocos envíos por hora: configura SMTP propio en Authentication → Emails → SMTP Settings, o espera
+          antes de volver a invitar.
         </p>
         <label className="field-label">
           Correo

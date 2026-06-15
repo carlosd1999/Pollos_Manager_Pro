@@ -19,6 +19,7 @@ export default function VentasModule(props) {
     confirmDeleteVenta,
     submitAbono,
     confirmDeleteAbono,
+    formResetGeneration,
   } = props;
 
   return (
@@ -34,6 +35,7 @@ export default function VentasModule(props) {
           setFieldErrors={setFieldErrors}
           handleVenta={handleVenta}
           editingVentaId={editingVentaId}
+          formResetGeneration={formResetGeneration}
           onCancelEdit={cancelOperacionesEdit}
         />
       </div>

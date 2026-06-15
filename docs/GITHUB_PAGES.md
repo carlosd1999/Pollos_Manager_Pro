@@ -29,12 +29,23 @@ El workflow `.github/workflows/deploy-github-pages.yml` se ejecuta en cada push 
 
 ## 4. Supabase (login y enlaces de correo)
 
-En Supabase → **Authentication** → **URL configuration**:
+En Supabase → **Authentication** → **URL configuration** ([documentación redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls)):
 
-- **Site URL**: la URL real de GitHub Pages (con `https` y la barra final opcional).
-- **Redirect URLs**: añade la misma URL; si usas recuperación de contraseña, incluye también patrones que Supabase permita (por ejemplo `https://TU_USUARIO.github.io/NOMBRE_REPO/**` si la consola lo admite).
+**Site URL** (elige una como “principal”, suele ser producción):
 
-Sin esto, el auth puede fallar solo en producción.
+- `https://carlosd1999.github.io/Pollos_Manager_Pro/`  
+  (o la raíz de tu usuario si el repo fuera `usuario.github.io`)
+
+**Redirect URLs** — añade **todas** las URLs desde las que enviarás invitaciones o recuperación de contraseña (cada variante cuenta):
+
+| Entorno | URLs típicas |
+|--------|----------------|
+| Local | `http://localhost:5173/` y, por si acaso, `http://localhost:5173` |
+| GitHub Pages (repo en subcarpeta) | `https://carlosd1999.github.io/Pollos_Manager_Pro/` y `https://carlosd1999.github.io/Pollos_Manager_Pro` |
+
+La app ya manda `redirect_to` con **origen + base de Vite** (`/Pollos_Manager_Pro/` en Pages), no solo `https://usuario.github.io/`, para que coincida con esta lista.
+
+Sin entradas correctas aquí, los enlaces del correo (invitación, reset password) fallan aunque el token sea válido.
 
 ## 5. Repo `usuario.github.io` (sitio en la raíz)
 

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getSupabaseRedirectUrl } from '../lib/appRedirectUrl';
 import { AuthPageLayout } from './auth/AuthPageLayout';
 
 function FieldIconMail() {
@@ -24,7 +25,7 @@ function FieldIconLock() {
   );
 }
 
-function AuthScreen({ onLogin, authError }) {
+function AuthScreen({ onLogin, authError, linkNotice, onDismissLinkNotice }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState('');
@@ -54,7 +55,7 @@ function AuthScreen({ onLogin, authError }) {
     }
     setSendingReset(true);
     try {
-      const redirectTo = `${window.location.origin}/`;
+      const redirectTo = getSupabaseRedirectUrl();
       const { error } = await supabase.auth.resetPasswordForEmail(addr, { redirectTo });
       if (error) {
         setLocalError(error.message);
@@ -76,6 +77,14 @@ function AuthScreen({ onLogin, authError }) {
         </p>
       }
     >
+      {linkNotice ? (
+        <div className="auth-alert auth-alert-error" style={{ marginBottom: '0.75rem' }}>
+          <p style={{ margin: '0 0 0.5rem' }}>{linkNotice}</p>
+          <button type="button" className="auth-btn auth-btn-link" onClick={() => onDismissLinkNotice?.()}>
+            Entendido
+          </button>
+        </div>
+      ) : null}
       <form className="auth-form" onSubmit={submitLogin} noValidate>
         <div className="auth-field">
           <label className="auth-field-label" htmlFor="auth-email">

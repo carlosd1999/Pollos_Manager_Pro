@@ -1,13 +1,27 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatColones } from '../../lib/formatCurrency';
+import { sortLotesOldestFirst } from '../../lib/business';
+import { normalizeDecimalString, parseDecimalNumber } from '../../lib/parseDecimalInput';
 import { formatPrecioKgForForm, roundedVentaTotalAndPrecioKg } from '../../lib/ventaPricing';
 import { VENTA_PAYMENT_METHOD_OPTIONS } from '../../constants/payments';
 
 function mergeVentaConRedondeo(prevForm, patch) {
   const v = { ...prevForm.venta, ...patch };
-  const pt = Number(v.peso_total);
-  const pk = Number(v.precio_kg);
-  if (pt > 0 && pk > 0) {
-    const { totalVenta, precioKg } = roundedVentaTotalAndPrecioKg(pt, pk);
+  const pesoStr = normalizeDecimalString(v.peso_total);
+  const pt = pesoStr === '' ? NaN : Number(pesoStr);
+  const pkStr = normalizeDecimalString(v.precio_kg);
+  const pkNum = pkStr === '' ? NaN : Number(pkStr);
+
+  /** Apartado: peso 0 → reserva pollos sin pesar; total 0 hasta editar con peso real. */
+  if (pesoStr !== '' && Number.isFinite(pt) && pt === 0) {
+    v.total_redondeado = 0;
+    v.pagoCompleto = false;
+    v.primerAbono = '';
+    return { ...prevForm, venta: v };
+  }
+
+  if (pt > 0 && pkNum > 0) {
+    const { totalVenta, precioKg } = roundedVentaTotalAndPrecioKg(pt, pkNum);
     v.precio_kg = formatPrecioKgForForm(precioKg);
     v.total_redondeado = totalVenta;
   } else {
@@ -27,9 +41,48 @@ function VentaForm({
   handleVenta,
   editingVentaId,
   onCancelEdit,
+  formResetGeneration = 0,
 }) {
   const isEditing = Boolean(editingVentaId);
   const lockClienteLote = isEditing;
+
+  const lotesOrdenados = useMemo(
+    () => sortLotesOldestFirst(lotesWithAvailability || []),
+    [lotesWithAvailability],
+  );
+
+  const loteVentaPorDefecto = useMemo(() => {
+    const hit = lotesOrdenados.find((l) => Number(l.disponibles) > 0);
+    return hit ? String(hit.id) : '';
+  }, [lotesOrdenados]);
+
+  const [loteVentaManual, setLoteVentaManual] = useState(false);
+  /** Evita carrera entre dos useEffect al guardar: al subir formResetGeneration hay que aplicar el lote aunque manual siga true en ese render. */
+  const prevFormResetGenRef = useRef(null);
+
+  useEffect(() => {
+    if (editingVentaId) {
+      prevFormResetGenRef.current = formResetGeneration;
+      return;
+    }
+    const genBumped =
+      prevFormResetGenRef.current !== null && prevFormResetGenRef.current !== formResetGeneration;
+    prevFormResetGenRef.current = formResetGeneration;
+
+    if (genBumped) setLoteVentaManual(false);
+    if (!genBumped && loteVentaManual) return;
+
+    setForm((prev) => {
+      const next = loteVentaPorDefecto;
+      const cur = prev.venta.lote_id != null && prev.venta.lote_id !== '' ? String(prev.venta.lote_id) : '';
+      if (cur === next) return prev;
+      return { ...prev, venta: { ...prev.venta, lote_id: next } };
+    });
+  }, [formResetGeneration, editingVentaId, loteVentaManual, loteVentaPorDefecto, setForm]);
+
+  const pesoStrForm = normalizeDecimalString(form.venta.peso_total);
+  const esApartado =
+    pesoStrForm !== '' && Number.isFinite(Number(pesoStrForm)) && Number(pesoStrForm) === 0;
 
   const totalMostrar =
     form.venta.total_redondeado !== '' && form.venta.total_redondeado != null
@@ -37,7 +90,9 @@ function VentaForm({
       : null;
 
   const requiereMetodoPago =
-    !isEditing && (form.venta.pagoCompleto || (form.venta.primerAbono !== '' && Number(form.venta.primerAbono) > 0));
+    !esApartado &&
+    !isEditing &&
+    (form.venta.pagoCompleto || (form.venta.primerAbono !== '' && parseDecimalNumber(form.venta.primerAbono) > 0));
 
   return (
     <article className="card">
@@ -83,16 +138,17 @@ function VentaForm({
         <select
           id="venta-lote"
           className={inputClass('venta.lote_id')}
-          value={form.venta.lote_id}
+          value={form.venta.lote_id === '' || form.venta.lote_id == null ? '' : String(form.venta.lote_id)}
           disabled={lockClienteLote}
           onChange={(e) => {
+            setLoteVentaManual(true);
             setForm({ ...form, venta: { ...form.venta, lote_id: e.target.value } });
             setFieldErrors((prev) => ({ ...prev, 'venta.lote_id': '' }));
           }}
         >
           <option value="">Seleccionar…</option>
-          {lotesWithAvailability.map((lote) => (
-            <option key={lote.id} value={lote.id}>
+          {lotesOrdenados.map((lote) => (
+            <option key={lote.id} value={String(lote.id)}>
               Lote {lote.numero_lote} — disponibles {lote.disponibles}
             </option>
           ))}
@@ -123,7 +179,7 @@ function VentaForm({
       </div>
       <div className="form-field-stack">
         <label className="form-field-label" htmlFor="venta-peso-total">
-          Peso total
+          Peso total (kg)
         </label>
         <div className={['input-affix', fieldErrors['venta.peso_total'] ? 'input-affix--error' : ''].filter(Boolean).join(' ')}>
           <input
@@ -142,10 +198,14 @@ function VentaForm({
           </span>
         </div>
         {fieldErrors['venta.peso_total'] && <p className="field-error">{fieldErrors['venta.peso_total']}</p>}
+        <p className="lists-hint" style={{ marginTop: 4 }}>
+          Usa <strong>0</strong> para un <strong>apartado</strong> (reserva de pollos sin pesar). El stock baja con la
+          cantidad; cuando entregues, edita la venta y registra el peso y el total.
+        </p>
       </div>
       <div className="form-field-stack">
         <label className="form-field-label" htmlFor="venta-precio-kg">
-          Precio por kilogramo
+          Precio por kilogramo{esApartado ? ' (opcional)' : ''}
         </label>
         <div className={['input-affix', fieldErrors['venta.precio_kg'] ? 'input-affix--error' : ''].filter(Boolean).join(' ')}>
           <span className="input-affix-symbol input-affix-symbol--leading" aria-hidden="true">
@@ -174,9 +234,11 @@ function VentaForm({
             id="venta-peso-promedio"
             readOnly
             value={
-              form.venta.cantidad && form.venta.peso_total
-                ? (Number(form.venta.peso_total) / Number(form.venta.cantidad)).toFixed(2)
-                : ''
+              form.venta.cantidad && pesoStrForm !== '' && Number(pesoStrForm) > 0
+                ? (Number(pesoStrForm) / Number(form.venta.cantidad)).toFixed(2)
+                : esApartado
+                  ? '—'
+                  : ''
             }
           />
           <span className="input-affix-symbol input-affix-symbol--trailing" aria-hidden="true">
@@ -191,17 +253,20 @@ function VentaForm({
         <input
           id="venta-total"
           readOnly
-          value={totalMostrar != null && totalMostrar > 0 ? formatColones(totalMostrar) : ''}
+          value={totalMostrar != null && Number.isFinite(totalMostrar) ? formatColones(totalMostrar) : ''}
         />
       </div>
-      <p className="lists-hint" style={{ marginTop: 0 }}>
-        El total se redondea <strong>hacia abajo</strong> al múltiplo de ₡25 más cercano. El precio por kg se ajusta automáticamente.
-      </p>
+      {!esApartado && (
+        <p className="lists-hint" style={{ marginTop: 0 }}>
+          El total se redondea <strong>hacia abajo</strong> al múltiplo de ₡25 más cercano. El precio por kg se ajusta automáticamente.
+        </p>
+      )}
       {!isEditing && (
         <>
           <label className="check-row">
             <input
               type="checkbox"
+              disabled={esApartado}
               checked={form.venta.pagoCompleto}
               onChange={(e) => {
                 const checked = e.target.checked;
@@ -218,6 +283,11 @@ function VentaForm({
             />
             Pago al contado
           </label>
+          {esApartado && (
+            <p className="lists-hint" style={{ marginTop: 4 }}>
+              En apartado no aplica cobro hasta registrar peso y total.
+            </p>
+          )}
           {!form.venta.pagoCompleto && (
             <>
               <div className="form-field-stack">
@@ -235,6 +305,7 @@ function VentaForm({
                     className={inputClass('venta.primerAbono')}
                     inputMode="numeric"
                     autoComplete="off"
+                    disabled={esApartado}
                     value={form.venta.primerAbono}
                     onChange={(e) => {
                       setForm({ ...form, venta: { ...form.venta, primerAbono: e.target.value } });

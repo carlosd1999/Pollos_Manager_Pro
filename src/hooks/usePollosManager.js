@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
@@ -12,7 +12,9 @@ import {
   EXPENSE_CATEGORY_PURCHASE,
   nextCicloNumero,
   nextLoteNumber,
+  sortLotesOldestFirst,
 } from '../lib/business';
+import { parseDecimalNumber } from '../lib/parseDecimalInput';
 import { supabase } from '../lib/supabase';
 import {
   closeCiclo,
@@ -45,7 +47,7 @@ import {
   validateVenta,
   validateVentaMetodoPago,
 } from '../validators/operacionesValidators';
-import { roundedVentaTotalAndPrecioKg } from '../lib/ventaPricing';
+import { floorTotalVentaColones, roundedVentaTotalAndPrecioKg } from '../lib/ventaPricing';
 
 const COLORS = [
   "#1f77b4", // azul
@@ -70,7 +72,7 @@ const COLORS = [
   "#636363", // gris oscuro
 ];
 
-export function usePollosManager(user) {
+export function usePollosManager(user, rowOwnerId) {
   const [tab, setTab] = useState('dashboard');
   const [data, setData] = useState({
     ciclos: [],
@@ -82,6 +84,8 @@ export function usePollosManager(user) {
     abonos: [],
   });
   const [form, setForm] = useState(createInitialForm);
+  /** Se incrementa en cada resetForm() para que VentaForm vuelva a aplicar el lote sugerido. */
+  const [formResetGeneration, setFormResetGeneration] = useState(0);
   const [status, setStatus] = useState('');
   const [statusType, setStatusType] = useState('info');
   const [fieldErrors, setFieldErrors] = useState({});
@@ -89,8 +93,9 @@ export function usePollosManager(user) {
   const [editingVentaId, setEditingVentaId] = useState(null);
   const [editingMortalidadId, setEditingMortalidadId] = useState(null);
   const [editingClienteId, setEditingClienteId] = useState(null);
-  /** '' = ver todos los ciclos en listas y métricas; id = filtrar por ese ciclo */
+  /** Al cargar datos, vista = ciclo más antiguo (menor `numero`); el usuario puede cambiar a «Todos». */
   const [vistaCicloId, setVistaCicloId] = useState('');
+  const vistaCicloDefaultApplied = useRef(false);
 
   const clearEditing = () => {
     setEditingGastoId(null);
@@ -102,6 +107,7 @@ export function usePollosManager(user) {
   const resetForm = () => {
     setForm(createInitialForm());
     setFieldErrors({});
+    setFormResetGeneration((g) => g + 1);
   };
 
   const setErrorStatus = (message) => {
@@ -117,7 +123,7 @@ export function usePollosManager(user) {
   const inputClass = (fieldKey) => (fieldErrors[fieldKey] ? 'input-error' : '');
 
   const readAll = async () => {
-    if (!supabase || !user) return;
+    if (!supabase || !user || rowOwnerId == null) return;
     const results = await Promise.all(TABLES.map((table) => fetchTable(table)));
     const firstError = results.find((result) => result.error)?.error;
     if (firstError) {
@@ -132,13 +138,28 @@ export function usePollosManager(user) {
   };
 
   useEffect(() => {
+    vistaCicloDefaultApplied.current = false;
+    setVistaCicloId('');
     readAll();
-    if (!supabase || !user) return;
+    if (!supabase || !user || rowOwnerId == null) return;
     const channel = supabase.channel('pollos-realtime');
     TABLES.forEach((table) => channel.on('postgres_changes', { event: '*', schema: 'public', table }, readAll));
     channel.subscribe();
     return () => void supabase.removeChannel(channel);
-  }, [user?.id]);
+  }, [user?.id, rowOwnerId]);
+
+  useEffect(() => {
+    if (vistaCicloDefaultApplied.current) return;
+    if (!data.ciclos?.length) return;
+    const oldest = [...data.ciclos].sort((a, b) => {
+      const n = Number(a.numero) - Number(b.numero);
+      if (n !== 0) return n;
+      return String(a.fecha_inicio || '').localeCompare(String(b.fecha_inicio || ''));
+    })[0];
+    if (!oldest?.id) return;
+    setVistaCicloId(String(oldest.id));
+    vistaCicloDefaultApplied.current = true;
+  }, [data.ciclos]);
 
   useEffect(() => {
     if (editingGastoId) return;
@@ -159,7 +180,7 @@ export function usePollosManager(user) {
     const cid = Number(vistaCicloId);
     const ventas = data.ventas.filter((v) => Number(v.ciclo_id) === cid);
     const ventaIds = new Set(ventas.map((v) => v.id));
-    const lotes = data.lotes.filter((l) => Number(l.ciclo_id) === cid);
+    const lotes = sortLotesOldestFirst(data.lotes.filter((l) => Number(l.ciclo_id) === cid));
     const loteIds = new Set(lotes.map((l) => l.id));
     return {
       ...data,
@@ -175,7 +196,7 @@ export function usePollosManager(user) {
   const lotesWithAvailabilityVista = useMemo(() => {
     if (!vistaCicloId) return lotesWithAvailability;
     const cid = Number(vistaCicloId);
-    return lotesWithAvailability.filter((l) => Number(l.ciclo_id) === cid);
+    return sortLotesOldestFirst(lotesWithAvailability.filter((l) => Number(l.ciclo_id) === cid));
   }, [lotesWithAvailability, vistaCicloId]);
 
   /** Lotes en formularios de venta/mortalidad: respeta filtro de vista e incluye el lote al editar aunque no coincida */
@@ -197,7 +218,7 @@ export function usePollosManager(user) {
         if (extra) list = [extra, ...list];
       }
     }
-    return list;
+    return sortLotesOldestFirst(list);
   }, [
     vistaCicloId,
     lotesWithAvailability,
@@ -211,7 +232,7 @@ export function usePollosManager(user) {
     if (!vistaCicloId) return stats;
     const cid = Number(vistaCicloId);
     const ciclos = data.ciclos.filter((c) => Number(c.id) === cid);
-    const lotes = data.lotes.filter((l) => Number(l.ciclo_id) === cid);
+    const lotes = sortLotesOldestFirst(data.lotes.filter((l) => Number(l.ciclo_id) === cid));
     const gastos = data.gastos.filter((g) => Number(g.ciclo_id) === cid);
     const ventas = data.ventas.filter((v) => Number(v.ciclo_id) === cid);
     const loteIds = new Set(lotes.map((l) => l.id));
@@ -282,7 +303,7 @@ export function usePollosManager(user) {
     const current = computeCurrentCycle(data.ciclos);
     if (!current) {
       const { data: inserted, error } = await createCiclo({
-        user_id: user.id,
+        user_id: rowOwnerId,
         numero: nextCicloNumero(data.ciclos),
         fecha_inicio: dayjs().format('YYYY-MM-DD'),
         estado: 'activo',
@@ -294,7 +315,7 @@ export function usePollosManager(user) {
   };
 
   const handleGasto = async () => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     try {
       if (editingGastoId) {
         const existing = data.gastos.find((g) => g.id === editingGastoId);
@@ -347,13 +368,13 @@ export function usePollosManager(user) {
         }
       }
 
-      const expensePayload = { ...form.gasto, monto: parsedAmount, ciclo_id: cycleId, user_id: user.id };
+      const expensePayload = { ...form.gasto, monto: parsedAmount, ciclo_id: cycleId, user_id: rowOwnerId };
 
       if (form.gasto.categoria === EXPENSE_CATEGORY_PURCHASE) {
         const loteNumero = nextLoteNumber(data.lotes, cycleId);
         const cantidadComprada = Number(form.gasto.cantidad_pollos);
         const { data: lote, error: loteError } = await createLote({
-          user_id: user.id,
+          user_id: rowOwnerId,
           ciclo_id: cycleId,
           numero_lote: loteNumero,
           fecha_ingreso: form.gasto.fecha,
@@ -379,30 +400,56 @@ export function usePollosManager(user) {
   };
 
   const handleVenta = async () => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     try {
       const venta = form.venta;
       const lote = lotesWithAvailability.find((item) => item.id === Number(venta.lote_id));
       const editingVenta = editingVentaId ? data.ventas.find((v) => v.id === editingVentaId) : null;
-      const { errors, cantidad, pesoTotal, precioKg } = validateVenta(venta, lote, { editingVenta });
-      const { totalVenta, precioKg: precioKgRedondeado } = roundedVentaTotalAndPrecioKg(pesoTotal, precioKg);
-      if (totalVenta < 25) {
+      const { errors, cantidad, pesoTotal, precioKg, isApartado } = validateVenta(venta, lote, { editingVenta });
+      const apartadoPagoErrors = {};
+      if (isApartado && (venta.pagoCompleto || (venta.primerAbono !== '' && parseDecimalNumber(venta.primerAbono) > 0))) {
+        apartadoPagoErrors['venta.peso_total'] =
+          'Apartado sin peso: desactiva pago al contado y deja sin abono inicial hasta registrar peso y total.';
+      }
+
+      let totalVenta;
+      let precioKgDb;
+      if (isApartado) {
+        totalVenta = 0;
+        precioKgDb = Number(Number(precioKg).toFixed(8)) || 0;
+      } else {
+        const totalFromForm =
+          venta.total_redondeado !== '' &&
+          venta.total_redondeado != null &&
+          Number.isFinite(Number(venta.total_redondeado))
+            ? floorTotalVentaColones(Number(venta.total_redondeado))
+            : null;
+        const recomputed = roundedVentaTotalAndPrecioKg(pesoTotal, precioKg);
+        totalVenta =
+          totalFromForm != null && totalFromForm > 0 ? totalFromForm : recomputed.totalVenta;
+        precioKgDb =
+          totalFromForm != null && totalFromForm > 0
+            ? Number(Number(precioKg).toFixed(8))
+            : Number(Number(recomputed.precioKg).toFixed(8));
+      }
+
+      if (!isApartado && totalVenta < 25) {
         setFieldErrors({
           ...errors,
+          ...apartadoPagoErrors,
           'venta.precio_kg': 'El total redondeado debe ser al menos ₡25; aumenta peso o precio por kg.',
         });
         return setErrorStatus('El total de la venta redondeado es demasiado bajo.');
       }
       const { errors: pe, primer } = validatePrimerAbono(venta.primerAbono, totalVenta, venta.pagoCompleto);
       const { errors: me } = validateVentaMetodoPago(venta, primer);
-      const merged = { ...errors, ...pe, ...me };
+      const merged = { ...errors, ...apartadoPagoErrors, ...pe, ...me };
       if (Object.keys(merged).length > 0) {
         setFieldErrors(merged);
         return setErrorStatus('Corrige los campos en rojo');
       }
       setFieldErrors({});
-      const pesoPromedio = pesoTotal / cantidad;
-      const precioKgDb = Number(Number(precioKgRedondeado).toFixed(6));
+      const pesoPromedio = cantidad > 0 && pesoTotal > 0 ? pesoTotal / cantidad : 0;
 
       if (editingVentaId) {
         const existing = data.ventas.find((v) => v.id === editingVentaId);
@@ -443,7 +490,7 @@ export function usePollosManager(user) {
       }
 
       const base = {
-        user_id: user.id,
+        user_id: rowOwnerId,
         fecha: venta.fecha,
         lote_id: Number(venta.lote_id),
         cliente_id: Number(venta.cliente_id),
@@ -470,7 +517,7 @@ export function usePollosManager(user) {
       if (ventaError) throw new Error(ventaError.message);
       if (!venta.pagoCompleto && primer > 0) {
         const { error: abErr } = await createAbono({
-          user_id: user.id,
+          user_id: rowOwnerId,
           venta_id: inserted.id,
           fecha: venta.fecha,
           monto: primer,
@@ -483,20 +530,24 @@ export function usePollosManager(user) {
       }
       await readAll();
       resetForm();
-      setSuccessStatus(
-        venta.pagoCompleto
-          ? 'Venta registrada (pago completo)'
-          : primer > 0
-            ? 'Venta registrada con abono inicial'
-            : 'Venta registrada a crédito — registra abonos cuando el cliente pague',
-      );
+      if (isApartado) {
+        setSuccessStatus('Apartado registrado: al entregar, edita la venta y registra peso y total.');
+      } else {
+        setSuccessStatus(
+          venta.pagoCompleto
+            ? 'Venta registrada (pago completo)'
+            : primer > 0
+              ? 'Venta registrada con abono inicial'
+              : 'Venta registrada a crédito — registra abonos cuando el cliente pague',
+        );
+      }
     } catch (error) {
       setErrorStatus(`No se pudo guardar la venta: ${error.message}`);
     }
   };
 
   const handleMortalidad = async () => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     try {
       if (editingMortalidadId) {
         const existing = data.mortalidad.find((m) => m.id === editingMortalidadId);
@@ -528,7 +579,7 @@ export function usePollosManager(user) {
       setFieldErrors({});
       const { error } = await createMortalidad({
         ...form.mortalidad,
-        user_id: user.id,
+        user_id: rowOwnerId,
         lote_id: Number(form.mortalidad.lote_id),
         cantidad,
       });
@@ -542,7 +593,7 @@ export function usePollosManager(user) {
   };
 
   const handleCliente = async () => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     const { errors } = validateCliente(form.cliente);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -564,7 +615,7 @@ export function usePollosManager(user) {
         return;
       }
       const { error } = await createCliente({
-        user_id: user.id,
+        user_id: rowOwnerId,
         nombre: form.cliente.nombre.trim(),
         telefono: form.cliente.telefono.trim(),
         direccion: form.cliente.direccion.trim(),
@@ -657,7 +708,7 @@ export function usePollosManager(user) {
   };
 
   const confirmDeleteGasto = async (id) => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     const gasto = data.gastos.find((g) => g.id === id);
     let msg = '¿Eliminar este gasto? Esta acción no se puede deshacer.';
     if (gasto?.categoria === EXPENSE_CATEGORY_PURCHASE && gasto?.lote_id) {
@@ -697,7 +748,7 @@ export function usePollosManager(user) {
   };
 
   const confirmDeleteVenta = async (id) => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     if (!window.confirm('¿Eliminar esta venta? Esta acción no se puede deshacer.')) return;
     try {
       const { error } = await deleteVenta(id);
@@ -714,7 +765,7 @@ export function usePollosManager(user) {
   };
 
   const confirmDeleteMortalidad = async (id) => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     if (!window.confirm('¿Eliminar este registro de mortalidad? Esta acción no se puede deshacer.')) return;
     try {
       const { error } = await deleteMortalidad(id);
@@ -731,7 +782,7 @@ export function usePollosManager(user) {
   };
 
   const confirmDeleteCliente = async (id) => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     if (!window.confirm('¿Eliminar este cliente? No podrá eliminarse si tiene ventas asociadas.')) return;
     try {
       const { error } = await deleteCliente(id);
@@ -748,7 +799,7 @@ export function usePollosManager(user) {
   };
 
   const submitAbono = async (ventaId, payload) => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     try {
       const { errors, monto } = validateAbonoForm(payload);
       if (Object.keys(errors).length > 0) {
@@ -769,7 +820,7 @@ export function usePollosManager(user) {
         return setErrorStatus('El abono supera el saldo pendiente de la venta.');
       }
       const { error } = await createAbono({
-        user_id: user.id,
+        user_id: rowOwnerId,
         venta_id: ventaId,
         fecha: payload.fecha,
         monto,
@@ -801,7 +852,7 @@ export function usePollosManager(user) {
   };
 
   const cerrarCicloPorId = async (cicloId) => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     const ciclo = data.ciclos.find((c) => Number(c.id) === Number(cicloId));
     if (!ciclo) return setErrorStatus('Ciclo no encontrado.');
     if (ciclo.estado !== 'activo') return setErrorStatus('Ese ciclo ya está cerrado.');
@@ -825,10 +876,10 @@ export function usePollosManager(user) {
   };
 
   const abrirNuevoCiclo = async () => {
-    if (!supabase || !user) return setErrorStatus('Debes iniciar sesion');
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
     try {
       const { data: inserted, error } = await createCiclo({
-        user_id: user.id,
+        user_id: rowOwnerId,
         numero: nextCicloNumero(data.ciclos),
         fecha_inicio: dayjs().format('YYYY-MM-DD'),
         estado: 'activo',
@@ -925,5 +976,6 @@ export function usePollosManager(user) {
     cerrarCicloPorId,
     abrirNuevoCiclo,
     siguienteLoteCompra,
+    formResetGeneration,
   };
 }

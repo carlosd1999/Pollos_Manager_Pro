@@ -10,7 +10,7 @@ export async function fetchMyModuleAccessForUser(userId) {
 /** Fila de perfil del usuario actual (incluye is_admin para RLS alineado con la app). */
 export async function fetchMyProfileRow(userId) {
   if (!supabase || !userId) return { data: null, error: null };
-  return supabase.from('profiles').select('id, is_admin').eq('id', userId).maybeSingle();
+  return supabase.from('profiles').select('id, is_admin, data_owner_id').eq('id', userId).maybeSingle();
 }
 
 export async function fetchAllProfiles() {

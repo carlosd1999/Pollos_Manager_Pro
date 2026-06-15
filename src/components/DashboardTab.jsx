@@ -23,8 +23,18 @@ function DashboardTab({ stats, utilidadPorCiclo, gastoPorCategoria, filtroCicloL
           </p>
         </article>
       )}
-      <article className="card kpi"><h3>Ganancia total</h3><strong>{formatColones(stats.totalUtilidad)}</strong></article>
-      <article className="card kpi"><h3>Rentabilidad</h3><strong>{stats.rentabilidad.toFixed(2)}%</strong></article>
+      <article className="card kpi">
+        <h3>Ganancia total</h3>
+        <strong className={stats.totalUtilidad < 0 ? 'kpi-negative' : 'kpi-positive'}>
+          {formatColones(stats.totalUtilidad)}
+        </strong>
+      </article>
+      <article className="card kpi">
+        <h3>Rentabilidad</h3>
+        <strong className={stats.rentabilidad < 0 ? 'kpi-negative' : 'kpi-positive'}>
+          {stats.rentabilidad.toFixed(2)}%
+        </strong>
+      </article>
       <article className="card kpi"><h3>Mortalidad general</h3><strong>{stats.mortalidadGeneral.toFixed(2)}%</strong></article>
       <article className="card chart">
         <h3>Ganancia por ciclo</h3>

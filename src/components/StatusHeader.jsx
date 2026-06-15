@@ -41,7 +41,9 @@ function StatusHeader({
   onVistaCicloChange,
 }) {
   const dark = theme === 'dark';
-  const ciclosOrdenados = [...ciclos].sort((a, b) => Number(a.numero) - Number(b.numero));
+  const ciclosOrdenados = [...ciclos]
+  .filter(c => c.estado === "activo")
+  .sort((a, b) => Number(a.numero) - Number(b.numero));
 
   return (
     <header className="app-header">

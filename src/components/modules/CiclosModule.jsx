@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { formatColones } from '../../lib/formatCurrency';
+import { sortLotesOldestFirst } from '../../lib/business';
 
 function CiclosModule({ data, lotesWithAvailability, cerrarCicloPorId, abrirNuevoCiclo }) {
   const ciclosOrdenados = useMemo(() => {
@@ -19,7 +20,8 @@ function CiclosModule({ data, lotesWithAvailability, cerrarCicloPorId, abrirNuev
     return m;
   }, [lotesWithAvailability]);
 
-  const lotesPorCiclo = (cicloId) => (data.lotes || []).filter((l) => l.ciclo_id === cicloId);
+  const lotesPorCiclo = (cicloId) =>
+    sortLotesOldestFirst((data.lotes || []).filter((l) => Number(l.ciclo_id) === Number(cicloId)));
 
   const ventasPorLote = (loteId) =>
     (data.ventas || []).filter((v) => Number(v.lote_id) === Number(loteId)).reduce((s, v) => s + Number(v.cantidad || 0), 0);
@@ -86,7 +88,7 @@ function CiclosModule({ data, lotesWithAvailability, cerrarCicloPorId, abrirNuev
             {lotes.length === 0 ? (
               <p className="lists-hint">Sin lotes en este ciclo.</p>
             ) : (
-              <div className="table-wrap">
+              <div className="table-wrap ciclos-lotes-wrap">
                 <table className="data-table">
                   <thead>
                     <tr>
@@ -100,18 +102,15 @@ function CiclosModule({ data, lotesWithAvailability, cerrarCicloPorId, abrirNuev
                     </tr>
                   </thead>
                   <tbody>
-                    {lotes
-                      .slice()
-                      .sort((a, b) => a.numero_lote - b.numero_lote)
-                      .map((l) => (
+                    {lotes.map((l) => (
                         <tr key={l.id}>
-                          <td>{l.numero_lote}</td>
-                          <td>{l.fecha_ingreso}</td>
-                          <td>{l.cantidad_comprada}</td>
-                          <td>{ventasPorLote(l.id)}</td>
-                          <td>{mortalidadPorLote(l.id)}</td>
-                          <td>{disponiblesMap[l.id] ?? '—'}</td>
-                          <td>{formatColones(l.precio_compra)}</td>
+                          <td data-label="Lote #">{l.numero_lote}</td>
+                          <td data-label="Ingreso">{l.fecha_ingreso}</td>
+                          <td data-label="Comprados">{l.cantidad_comprada}</td>
+                          <td data-label="Vendidos">{ventasPorLote(l.id)}</td>
+                          <td data-label="Mortalidad">{mortalidadPorLote(l.id)}</td>
+                          <td data-label="Disponibles">{disponiblesMap[l.id] ?? '—'}</td>
+                          <td data-label="Precio compra">{formatColones(l.precio_compra)}</td>
                         </tr>
                       ))}
                   </tbody>

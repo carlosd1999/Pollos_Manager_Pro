@@ -4,5 +4,8 @@
 # Opcional (debe coincidir con app_metadata.role del admin y con public.is_app_admin en SQL):
 #           supabase secrets set ADMIN_APP_ROLE="admin"
 
+# Debe ser false: el preflight CORS (OPTIONS) no lleva Authorization; con true la
+# puerta de enlace responde error antes de tu handler y el navegador bloquea la petición.
+# La función ya valida el JWT con createClient(anon) + auth.getUser().
 [functions.invite-user]
-verify_jwt = true
+verify_jwt = false

@@ -1,15 +1,20 @@
-/** Total de venta en colones: siempre hacia abajo a múltiplo de 25 (…25, 50, 75, 00). */
+/** Total de venta en colones: piso a entero ₡ (tras fijar el producto a 2 decimales por float), luego a múltiplo de 25 hacia abajo. */
 export function floorTotalVentaColones(amount) {
-  const n = Math.floor(Number(amount) || 0);
+  const a = Number(amount) || 0;
+  // pt * precio_ajustado suele quedar 9374.999…; redondear a céntimos evita bajar de más al piso de 25.
+  const colonesTwoDec = Math.round(a * 100) / 100;
+  const n = Math.floor(colonesTwoDec);
   return Math.max(0, Math.floor(n / 25) * 25);
 }
 
-/** Precio por kg en UI (hasta 4 decimales, sin ceros de más). */
+/** Precio por kg en el formulario: bastantes decimales para que peso×precio no pierda ₡ al recalcular; se recortan ceros finales. */
 export function formatPrecioKgForForm(precioKg) {
   const n = Number(precioKg);
   if (!Number.isFinite(n) || n <= 0) return '';
-  const r = Math.round(n * 10000) / 10000;
-  return String(r);
+  const r = Math.round(n * 1e8) / 1e8;
+  let s = r.toFixed(8);
+  if (s.includes('.')) s = s.replace(/\.?0+$/, '');
+  return s;
 }
 
 /**

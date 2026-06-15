@@ -3,7 +3,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-region, prefer',
+  'Access-Control-Max-Age': '86400',
 };
 
 const MODULE_KEYS = [
@@ -27,12 +30,13 @@ function isAppAdmin(user: { app_metadata?: { role?: string } }): boolean {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    const authHeader = req.headers.get('Authorization') ?? '';
+    const jwt = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (!jwt) {
       return new Response(JSON.stringify({ error: 'No autorizado' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -50,14 +54,11 @@ serve(async (req) => {
       });
     }
 
-    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-
+    const supabaseUser = createClient(supabaseUrl, supabaseAnonKey);
     const {
       data: { user },
       error: userErr,
-    } = await supabaseUser.auth.getUser();
+    } = await supabaseUser.auth.getUser(jwt);
 
     if (userErr || !user) {
       return new Response(JSON.stringify({ error: 'No autorizado' }), {
@@ -66,11 +67,25 @@ serve(async (req) => {
       });
     }
 
-    if (!isAppAdmin(user)) {
-      return new Response(JSON.stringify({ error: 'Solo un usuario con rol admin en App Metadata puede invitar' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+
+    let canInvite = isAppAdmin(user);
+    if (!canInvite) {
+      const { data: profileRow } = await supabaseAdmin.from('profiles').select('is_admin').eq('id', user.id).maybeSingle();
+      canInvite = Boolean(profileRow?.is_admin);
+    }
+
+    if (!canInvite) {
+      return new Response(
+        JSON.stringify({
+          error:
+            'Solo un administrador puede invitar (rol admin en App Metadata o is_admin en perfil).',
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
     }
 
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
@@ -87,16 +102,23 @@ serve(async (req) => {
       });
     }
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-
     const { data: invited, error: inviteErr } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-      data: { full_name },
+      data: {
+        ...(full_name ? { full_name } : {}),
+        // El cliente muestra "definir contraseña" hasta que updateUser la fije y se limpie el flag.
+        must_complete_password: true,
+      },
       redirectTo: redirect_to,
     });
 
     if (inviteErr) {
-      return new Response(JSON.stringify({ error: inviteErr.message }), {
-        status: 400,
+      const raw = inviteErr.message || String(inviteErr);
+      const rateLimited = /rate limit|too many emails|email rate limit exceeded/i.test(raw);
+      const errorText = rateLimited
+        ? 'Límite de correos de Supabase alcanzado (el SMTP integrado permite muy pocos envíos por hora). Espera y vuelve a intentar, o configura SMTP propio en el dashboard: Authentication → Emails → SMTP Settings. Ver: https://supabase.com/docs/guides/auth/auth-smtp'
+        : raw;
+      return new Response(JSON.stringify({ error: errorText }), {
+        status: rateLimited ? 429 : 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -113,6 +135,17 @@ serve(async (req) => {
       });
       if (modErr) {
         return new Response(JSON.stringify({ error: modErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { error: ownerErr } = await supabaseAdmin
+        .from('profiles')
+        .update({ data_owner_id: user.id })
+        .eq('id', userId);
+      if (ownerErr) {
+        return new Response(JSON.stringify({ error: ownerErr.message }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
