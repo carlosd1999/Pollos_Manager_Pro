@@ -1,5 +1,6 @@
 -- Pollos Manager: perfiles, permisos por módulo e invitaciones (admin).
 -- Ejecuta este script en el SQL Editor de Supabase después de supabase-schema.sql y supabase-auth-rls.sql.
+-- Datos compartidos invitado ↔ admin: después ejecuta también supabase-shared-dataset-rls.sql.
 --
 -- Pasos recomendados en Authentication > Settings:
 -- - Desactiva "Enable sign ups" (solo el admin invita desde la app / función).

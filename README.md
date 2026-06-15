@@ -10,6 +10,14 @@ Web app responsive (mobile first) para administrar ciclos productivos, lotes, mo
 - jsPDF + xlsx (exportaciones)
 - PWA basica con manifest + service worker
 
+## Iconos PWA (pantalla de inicio / iOS)
+
+Los PNG en `public/` (`pwa-192.png`, `pwa-512.png`, `pwa-512-maskable.png`, `apple-touch-icon.png`) se generan desde `public/favicon.svg`. Si cambias el logo, vuelve a generarlos:
+
+```bash
+npm run generate:pwa-icons
+```
+
 ## Configuracion
 
 1. Instala dependencias:
