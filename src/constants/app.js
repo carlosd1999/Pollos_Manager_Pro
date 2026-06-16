@@ -1,6 +1,15 @@
 import dayjs from 'dayjs';
 
-export const TABLES = ['ciclos', 'lotes', 'mortalidad', 'gastos', 'ventas', 'clientes', 'abonos'];
+export const TABLES = [
+  'ciclos',
+  'lotes',
+  'mortalidad',
+  'gastos',
+  'ventas',
+  'clientes',
+  'abonos',
+  'lote_reparto_pagos',
+];
 
 /** Pestañas principales (orden en barra de navegación). */
 export const MAIN_TABS = ['dashboard', 'ventas', 'gastos', 'mortalidad', 'clientes', 'ciclos', 'reportes'];

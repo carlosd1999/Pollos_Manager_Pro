@@ -1,5 +1,6 @@
 import GastoForm from '../forms/GastoForm';
 import GastosList from '../lists/GastosList';
+import { MODULE_FORM_SCROLL_TARGET_ID } from '../../lib/scrollUi';
 
 export default function GastosModule(props) {
   const {
@@ -25,7 +26,7 @@ export default function GastosModule(props) {
 
   return (
     <section className="module-split">
-      <div className="module-form">
+      <div className="module-form" id={MODULE_FORM_SCROLL_TARGET_ID}>
         <GastoForm
           form={form}
           setForm={setForm}

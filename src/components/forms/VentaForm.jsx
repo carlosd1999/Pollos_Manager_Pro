@@ -4,6 +4,11 @@ import { sortLotesOldestFirst } from '../../lib/business';
 import { normalizeDecimalString, parseDecimalNumber } from '../../lib/parseDecimalInput';
 import { formatPrecioKgForForm, roundedVentaTotalAndPrecioKg } from '../../lib/ventaPricing';
 import { VENTA_PAYMENT_METHOD_OPTIONS } from '../../constants/payments';
+import {
+  VENTA_FILTRO_PERSONA_OPCIONES,
+  defaultRegistrarVentaTabFromFullName,
+  defaultVentaClientePersonaFromFullName,
+} from '../../constants/ventaClientePersonas';
 
 function mergeVentaConRedondeo(prevForm, patch) {
   const v = { ...prevForm.venta, ...patch };
@@ -42,6 +47,7 @@ function VentaForm({
   editingVentaId,
   onCancelEdit,
   formResetGeneration = 0,
+  currentUserFullName = '',
 }) {
   const isEditing = Boolean(editingVentaId);
   const lockClienteLote = isEditing;
@@ -57,8 +63,50 @@ function VentaForm({
   }, [lotesOrdenados]);
 
   const [loteVentaManual, setLoteVentaManual] = useState(false);
-  /** Evita carrera entre dos useEffect al guardar: al subir formResetGeneration hay que aplicar el lote aunque manual siga true en ese render. */
+  const [personaClienteFiltro, setPersonaClienteFiltro] = useState(() =>
+    defaultVentaClientePersonaFromFullName(currentUserFullName),
+  );
+  const [registrarTab, setRegistrarTab] = useState(() => defaultRegistrarVentaTabFromFullName(currentUserFullName));
   const prevFormResetGenRef = useRef(null);
+
+  const selectRegistrarTab = (next) => {
+    if (next === 'venta' && registrarTab === 'apartado') {
+      const ps = normalizeDecimalString(form.venta.peso_total);
+      if (ps !== '' && Number.isFinite(Number(ps)) && Number(ps) === 0) {
+        setForm((prev) => ({ ...prev, venta: { ...prev.venta, peso_total: '' } }));
+      }
+    }
+    setRegistrarTab(next);
+  };
+
+  useEffect(() => {
+    setRegistrarTab(defaultRegistrarVentaTabFromFullName(currentUserFullName));
+  }, [formResetGeneration, currentUserFullName]);
+
+  useEffect(() => {
+    if (editingVentaId) {
+      setPersonaClienteFiltro('');
+      return;
+    }
+    setPersonaClienteFiltro(defaultVentaClientePersonaFromFullName(currentUserFullName));
+  }, [formResetGeneration, editingVentaId, currentUserFullName]);
+
+  const clientesFiltrados = useMemo(() => {
+    const all = data.clientes || [];
+    const q = personaClienteFiltro.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((c) => (c.nombre || '').toLowerCase().includes(q));
+  }, [data.clientes, personaClienteFiltro]);
+
+  const clientesParaSelect = useMemo(() => {
+    const selId = form.venta.cliente_id != null && form.venta.cliente_id !== '' ? String(form.venta.cliente_id) : '';
+    if (!selId) return clientesFiltrados;
+    const inList = clientesFiltrados.some((c) => String(c.id) === selId);
+    if (inList) return clientesFiltrados;
+    const selected = (data.clientes || []).find((c) => String(c.id) === selId);
+    if (!selected) return clientesFiltrados;
+    return [selected, ...clientesFiltrados];
+  }, [clientesFiltrados, data.clientes, form.venta.cliente_id]);
 
   useEffect(() => {
     if (editingVentaId) {
@@ -94,94 +142,130 @@ function VentaForm({
     !isEditing &&
     (form.venta.pagoCompleto || (form.venta.primerAbono !== '' && parseDecimalNumber(form.venta.primerAbono) > 0));
 
-  return (
-    <article className="card">
-      <h3>{isEditing ? 'Editar venta' : 'Registrar venta'}</h3>
-      <div className="form-field-stack">
-        <label className="form-field-label" htmlFor="venta-fecha">
-          Fecha
-        </label>
-        <input
-          id="venta-fecha"
-          type="date"
-          value={form.venta.fecha}
-          onChange={(e) => setForm({ ...form, venta: { ...form.venta, fecha: e.target.value } })}
-        />
-      </div>
-      <div className="form-field-stack">
-        <label className="form-field-label" htmlFor="venta-cliente">
-          Cliente
-        </label>
-        <select
-          id="venta-cliente"
-          className={inputClass('venta.cliente_id')}
-          value={form.venta.cliente_id}
-          disabled={lockClienteLote}
-          onChange={(e) => {
-            setForm({ ...form, venta: { ...form.venta, cliente_id: e.target.value } });
-            setFieldErrors((prev) => ({ ...prev, 'venta.cliente_id': '' }));
-          }}
-        >
-          <option value="">Seleccionar…</option>
-          {data.clientes.map((cliente) => (
-            <option key={cliente.id} value={cliente.id}>
-              {cliente.nombre}
-            </option>
-          ))}
-        </select>
-        {fieldErrors['venta.cliente_id'] && <p className="field-error">{fieldErrors['venta.cliente_id']}</p>}
-      </div>
-      <div className="form-field-stack">
-        <label className="form-field-label" htmlFor="venta-lote">
-          Lote
-        </label>
-        <select
-          id="venta-lote"
-          className={inputClass('venta.lote_id')}
-          value={form.venta.lote_id === '' || form.venta.lote_id == null ? '' : String(form.venta.lote_id)}
-          disabled={lockClienteLote}
-          onChange={(e) => {
-            setLoteVentaManual(true);
-            setForm({ ...form, venta: { ...form.venta, lote_id: e.target.value } });
-            setFieldErrors((prev) => ({ ...prev, 'venta.lote_id': '' }));
-          }}
-        >
-          <option value="">Seleccionar…</option>
-          {lotesOrdenados.map((lote) => (
-            <option key={lote.id} value={String(lote.id)}>
-              Lote {lote.numero_lote} — disponibles {lote.disponibles}
-            </option>
-          ))}
-        </select>
-        {fieldErrors['venta.lote_id'] && <p className="field-error">{fieldErrors['venta.lote_id']}</p>}
-      </div>
-      {lockClienteLote && (
-        <p className="lists-hint" style={{ margin: '0 0 8px' }}>
-          Cliente y lote no se cambian al editar (evita inconsistencias de stock). Si necesitas otro lote, elimina y crea una venta nueva.
+  const fechaField = (
+    <div className="form-field-stack">
+      <label className="form-field-label" htmlFor="venta-fecha">
+        Fecha
+      </label>
+      <input
+        id="venta-fecha"
+        type="date"
+        value={form.venta.fecha}
+        onChange={(e) => setForm({ ...form, venta: { ...form.venta, fecha: e.target.value } })}
+      />
+    </div>
+  );
+
+  const clienteBlock = (
+    <div className="form-field-stack venta-cliente-field-group">
+      <p className="form-field-label form-field-label--section">Cliente</p>
+      <label className="form-field-label form-field-label--nested" htmlFor="venta-cliente-persona-filtro">
+        Filtrar por persona
+      </label>
+      <select
+        id="venta-cliente-persona-filtro"
+        className="venta-cliente-persona-filter"
+        value={personaClienteFiltro}
+        disabled={lockClienteLote}
+        aria-label="Filtrar clientes por persona"
+        onChange={(e) => setPersonaClienteFiltro(e.target.value)}
+      >
+        <option value="">Todos los clientes</option>
+        {VENTA_FILTRO_PERSONA_OPCIONES.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+      <label className="form-field-label form-field-label--nested" htmlFor="venta-cliente">
+        Elegir cliente
+      </label>
+      <select
+        id="venta-cliente"
+        className={inputClass('venta.cliente_id')}
+        value={form.venta.cliente_id}
+        disabled={lockClienteLote}
+        onChange={(e) => {
+          setForm({ ...form, venta: { ...form.venta, cliente_id: e.target.value } });
+          setFieldErrors((prev) => ({ ...prev, 'venta.cliente_id': '' }));
+        }}
+      >
+        <option value="">Seleccionar…</option>
+        {clientesParaSelect.map((cliente) => (
+          <option key={cliente.id} value={cliente.id}>
+            {cliente.nombre}
+          </option>
+        ))}
+      </select>
+      {personaClienteFiltro.trim() && (
+        <p className="lists-hint" style={{ marginTop: 4 }}>
+          {clientesFiltrados.length === 0
+            ? form.venta.cliente_id
+              ? 'Sin coincidencias con el filtro; el cliente ya elegido sigue en la lista.'
+              : 'Sin coincidencias con el filtro.'
+            : `${clientesFiltrados.length} cliente(s) que coinciden`}
         </p>
       )}
-      <div className="form-field-stack">
-        <label className="form-field-label" htmlFor="venta-cantidad">
-          Cantidad de pollos
-        </label>
-        <input
-          id="venta-cantidad"
-          className={inputClass('venta.cantidad')}
-          inputMode="numeric"
-          autoComplete="off"
-          value={form.venta.cantidad}
-          onChange={(e) => {
-            setForm({ ...form, venta: { ...form.venta, cantidad: e.target.value } });
-            setFieldErrors((prev) => ({ ...prev, 'venta.cantidad': '' }));
-          }}
-        />
-        {fieldErrors['venta.cantidad'] && <p className="field-error">{fieldErrors['venta.cantidad']}</p>}
-      </div>
+      {fieldErrors['venta.cliente_id'] && <p className="field-error">{fieldErrors['venta.cliente_id']}</p>}
+    </div>
+  );
+
+  const loteField = (
+    <div className="form-field-stack">
+      <label className="form-field-label" htmlFor="venta-lote">
+        Lote
+      </label>
+      <select
+        id="venta-lote"
+        className={inputClass('venta.lote_id')}
+        value={form.venta.lote_id === '' || form.venta.lote_id == null ? '' : String(form.venta.lote_id)}
+        disabled={lockClienteLote}
+        onChange={(e) => {
+          setLoteVentaManual(true);
+          setForm({ ...form, venta: { ...form.venta, lote_id: e.target.value } });
+          setFieldErrors((prev) => ({ ...prev, 'venta.lote_id': '' }));
+        }}
+      >
+        <option value="">Seleccionar…</option>
+        {lotesOrdenados.map((lote) => (
+          <option key={lote.id} value={String(lote.id)}>
+            Lote {lote.numero_lote} — disponibles {lote.disponibles}
+          </option>
+        ))}
+      </select>
+      {fieldErrors['venta.lote_id'] && <p className="field-error">{fieldErrors['venta.lote_id']}</p>}
+    </div>
+  );
+
+  const cantidadField = (
+    <div className="form-field-stack">
+      <label className="form-field-label" htmlFor="venta-cantidad">
+        Cantidad de pollos
+      </label>
+      <input
+        id="venta-cantidad"
+        className={inputClass('venta.cantidad')}
+        inputMode="numeric"
+        autoComplete="off"
+        value={form.venta.cantidad}
+        onChange={(e) => {
+          setForm({ ...form, venta: { ...form.venta, cantidad: e.target.value } });
+          setFieldErrors((prev) => ({ ...prev, 'venta.cantidad': '' }));
+        }}
+      />
+      {fieldErrors['venta.cantidad'] && <p className="field-error">{fieldErrors['venta.cantidad']}</p>}
+    </div>
+  );
+
+  const pesoPrecioTotalYPagos = (
+    <>
       <div className="form-field-stack">
         <label className="form-field-label" htmlFor="venta-peso-total">
           Peso total (kg)
         </label>
-        <div className={['input-affix', fieldErrors['venta.peso_total'] ? 'input-affix--error' : ''].filter(Boolean).join(' ')}>
+        <div
+          className={['input-affix', fieldErrors['venta.peso_total'] ? 'input-affix--error' : ''].filter(Boolean).join(' ')}
+        >
           <input
             id="venta-peso-total"
             className={inputClass('venta.peso_total')}
@@ -198,16 +282,24 @@ function VentaForm({
           </span>
         </div>
         {fieldErrors['venta.peso_total'] && <p className="field-error">{fieldErrors['venta.peso_total']}</p>}
-        <p className="lists-hint" style={{ marginTop: 4 }}>
-          Usa <strong>0</strong> para un <strong>apartado</strong> (reserva de pollos sin pesar). El stock baja con la
-          cantidad; cuando entregues, edita la venta y registra el peso y el total.
-        </p>
+        {isEditing && esApartado ? (
+          <p className="lists-hint" style={{ marginTop: 4 }}>
+            Esta venta es un <strong>apartado</strong> (peso 0). El stock ya bajó con la cantidad; al entregar, actualiza
+            peso y total aquí.
+          </p>
+        ) : isEditing && (
+          <p className="lists-hint" style={{ marginTop: 4 }}>
+            Ajusta peso, precio por kg o total según corresponda.
+          </p>
+        )}
       </div>
       <div className="form-field-stack">
         <label className="form-field-label" htmlFor="venta-precio-kg">
           Precio por kilogramo{esApartado ? ' (opcional)' : ''}
         </label>
-        <div className={['input-affix', fieldErrors['venta.precio_kg'] ? 'input-affix--error' : ''].filter(Boolean).join(' ')}>
+        <div
+          className={['input-affix', fieldErrors['venta.precio_kg'] ? 'input-affix--error' : ''].filter(Boolean).join(' ')}
+        >
           <span className="input-affix-symbol input-affix-symbol--leading" aria-hidden="true">
             ₡
           </span>
@@ -256,11 +348,6 @@ function VentaForm({
           value={totalMostrar != null && Number.isFinite(totalMostrar) ? formatColones(totalMostrar) : ''}
         />
       </div>
-      {!esApartado && (
-        <p className="lists-hint" style={{ marginTop: 0 }}>
-          El total se redondea <strong>hacia abajo</strong> al múltiplo de ₡25 más cercano. El precio por kg se ajusta automáticamente.
-        </p>
-      )}
       {!isEditing && (
         <>
           <label className="check-row">
@@ -295,7 +382,9 @@ function VentaForm({
                   Abono inicial (opcional)
                 </label>
                 <div
-                  className={['input-affix', fieldErrors['venta.primerAbono'] ? 'input-affix--error' : ''].filter(Boolean).join(' ')}
+                  className={['input-affix', fieldErrors['venta.primerAbono'] ? 'input-affix--error' : ''].filter(Boolean).join(
+                    ' ',
+                  )}
                 >
                   <span className="input-affix-symbol input-affix-symbol--leading" aria-hidden="true">
                     ₡
@@ -352,14 +441,78 @@ function VentaForm({
           )}
         </>
       )}
-      <div className="form-actions">
-        {isEditing && (
-          <button type="button" className="ghost-btn" onClick={onCancelEdit}>
-            Cancelar
+    </>
+  );
+
+  return (
+    <article className="card">
+      <h3>{isEditing ? 'Editar venta' : 'Registrar venta'}</h3>
+
+      {!isEditing && (
+        <div className="venta-form-subtabs" role="tablist" aria-label="Tipo de registro">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={registrarTab === 'venta'}
+            className={registrarTab === 'venta' ? 'active' : ''}
+            onClick={() => selectRegistrarTab('venta')}
+          >
+            Venta
           </button>
-        )}
-        <button type="button" onClick={handleVenta}>{isEditing ? 'Actualizar venta' : 'Guardar venta'}</button>
-      </div>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={registrarTab === 'apartado'}
+            className={registrarTab === 'apartado' ? 'active' : ''}
+            onClick={() => selectRegistrarTab('apartado')}
+          >
+            Apartado
+          </button>
+        </div>
+      )}
+
+      {fechaField}
+      {clienteBlock}
+      {loteField}
+      {lockClienteLote && (
+        <p className="lists-hint" style={{ margin: '0 0 8px' }}>
+          Cliente y lote no se cambian al editar (evita inconsistencias de stock). Si necesitas otro lote, elimina y crea una venta nueva.
+        </p>
+      )}
+      {cantidadField}
+
+      {isEditing && pesoPrecioTotalYPagos}
+
+      {!isEditing && registrarTab === 'venta' && pesoPrecioTotalYPagos}
+
+      {!isEditing && registrarTab === 'apartado' && (
+        <div className="form-actions">
+          <button type="button" onClick={() => handleVenta({ apartado: true })}>
+            Guardar apartado
+          </button>
+        </div>
+      )}
+
+      {(isEditing || registrarTab === 'venta') && (
+        <div className="form-actions">
+          {isEditing && (
+            <button type="button" className="ghost-btn" onClick={onCancelEdit}>
+              Cancelar
+            </button>
+          )}
+          {isEditing ? (
+            <button type="button" onClick={() => handleVenta()}>
+              Actualizar venta
+            </button>
+          ) : (
+            registrarTab === 'venta' && (
+              <button type="button" onClick={() => handleVenta()}>
+                Guardar venta
+              </button>
+            )
+          )}
+        </div>
+      )}
     </article>
   );
 }

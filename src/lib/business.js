@@ -19,15 +19,53 @@ export function nextCicloNumero(ciclos) {
   return Math.max(...ciclos.map((c) => Number(c.numero) || 0)) + 1;
 }
 
+export const VENTA_PAGO_EPS = 1e-4;
+
+/** Abonos más recientes primero (fecha, luego id). */
+export function sortAbonosNewestFirst(rows) {
+  return [...(rows || [])].sort((a, b) => {
+    const c = String(b.fecha || '').localeCompare(String(a.fecha || ''));
+    if (c !== 0) return c;
+    return Number(b.id || 0) - Number(a.id || 0);
+  });
+}
+
+export function sumAbonoMontos(rows) {
+  return (rows || []).reduce((s, a) => s + Number(a.monto || 0), 0);
+}
+
 /**
- * Pagos efectivos: si hay filas en abonos, la suma de abonos; si no, monto_cancelado en venta (ventas antiguas o pago al contado sin abono).
+ * Cobro cuando no hay filas en `abonos`: solo ventas marcadas `venta_al_contado` (registro al contado
+ * sin usar tabla abonos) usan `monto_cancelado` en estado pagado. El resto = 0 (crédito sin abonos o
+ * se borraron todos los abonos).
+ */
+export function paidFromVentaRowWithoutAbonos(venta) {
+  const total = Number(venta.total_venta || 0);
+  const mc = Number(venta.monto_cancelado || 0);
+  const sp = Number(venta.saldo_pendiente || 0);
+  const estado = venta.estado_pago;
+  const alContado = Boolean(venta.venta_al_contado);
+  const legacyContadoCompleto =
+    total > 0 &&
+    estado === 'pagado' &&
+    sp <= VENTA_PAGO_EPS &&
+    mc >= total - VENTA_PAGO_EPS;
+  if (alContado && legacyContadoCompleto) return Math.min(mc, total);
+  return 0;
+}
+
+/**
+ * Pagos efectivos: con filas en `abonos`, suma de abonos; sin filas, ver `paidFromVentaRowWithoutAbonos`.
  */
 export function effectivePaidVenta(venta, abonosAll) {
+  const total = Number(venta.total_venta || 0);
   const forV = (abonosAll || []).filter((a) => Number(a.venta_id) === Number(venta.id));
   if (forV.length > 0) {
-    return forV.reduce((s, a) => s + Number(a.monto || 0), 0);
+    let s = forV.reduce((acc, a) => acc + Number(a.monto || 0), 0);
+    if (total > 0 && s > total) s = total;
+    return s;
   }
-  return Number(venta.monto_cancelado || 0);
+  return paidFromVentaRowWithoutAbonos(venta);
 }
 
 /** Siguiente número de lote dentro del ciclo (según max numero_lote, no solo cantidad de filas). */

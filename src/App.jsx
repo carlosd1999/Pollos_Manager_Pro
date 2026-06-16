@@ -11,6 +11,7 @@ import ClientesModule from './components/modules/ClientesModule';
 import CiclosModule from './components/modules/CiclosModule';
 import ReportesTab from './components/ReportesTab';
 import StatusHeader from './components/StatusHeader';
+import StatusMessageModal from './components/StatusMessageModal';
 import DbLoadingOverlay from './components/DbLoadingOverlay';
 import { MAIN_TABS } from './constants/app';
 import { hasSupabaseConfig, supabase } from './lib/supabase';
@@ -169,6 +170,7 @@ function App() {
     setForm,
     status,
     statusType,
+    dismissStatus,
     fieldErrors,
     setFieldErrors,
     inputClass,
@@ -197,6 +199,9 @@ function App() {
     confirmDeleteCliente,
     submitAbono,
     confirmDeleteAbono,
+    guardarRepartoGastosObjetivo,
+    liquidarRepartoBucket,
+    deshacerUltimoRepartoPago,
     cerrarCicloPorId,
     abrirNuevoCiclo,
     siguienteLoteCompra,
@@ -319,11 +324,15 @@ function App() {
     <div className="app-shell">
       <LinkAuthNoticeBar message={linkAuthNotice} onDismiss={() => setLinkAuthNotice('')} />
       <DbLoadingOverlay />
+      <StatusMessageModal
+        open={hasSupabaseConfig && Boolean(status)}
+        message={status}
+        variant={statusType}
+        onDismiss={dismissStatus}
+      />
       <StatusHeader
         hasSupabaseConfig={hasSupabaseConfig}
-        status={status}
-        statusType={statusType}
-        userEmail={session?.user?.full_name || session?.user?.email}
+        userEmail={session?.user?.user_metadata?.full_name || session?.user?.email}
         onLogout={handleLogout}
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -345,9 +354,13 @@ function App() {
       {tab === 'ventas' && (
         <VentasModule
           {...moduleProps}
+          currentUserFullName={session?.user?.user_metadata?.full_name || ''}
           handleVenta={handleVenta}
           submitAbono={submitAbono}
           confirmDeleteAbono={confirmDeleteAbono}
+          guardarRepartoGastosObjetivo={guardarRepartoGastosObjetivo}
+          liquidarRepartoBucket={liquidarRepartoBucket}
+          deshacerUltimoRepartoPago={deshacerUltimoRepartoPago}
         />
       )}
 

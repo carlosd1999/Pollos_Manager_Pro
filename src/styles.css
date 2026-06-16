@@ -190,6 +190,44 @@ body {
   line-height: 1.4;
 }
 
+/* Modal de mensajes (éxito / error): encima del overlay de “Cargando…” */
+.status-message-overlay {
+  z-index: 9999;
+}
+
+.status-message-modal-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--pm-space-md);
+}
+
+.status-message-modal-text {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  color: var(--pm-text);
+  text-align: center;
+}
+
+.status-message-modal-text.success {
+  color: var(--pm-success);
+}
+
+.status-message-modal-text.error {
+  color: var(--pm-danger);
+  font-weight: 600;
+}
+
+.status-message-modal-text.info {
+  color: var(--pm-text-muted);
+}
+
+.status-message-modal-btn {
+  align-self: center;
+  min-width: 140px;
+}
+
 .status.success {
   color: var(--pm-header-status-ok);
 }
@@ -197,6 +235,10 @@ body {
 .status.error {
   color: var(--pm-header-status-err);
   font-weight: 600;
+}
+
+.status.info {
+  color: rgba(255, 255, 255, 0.88);
 }
 
 /* --- Layout: dashboard & genérico --- */
@@ -353,6 +395,11 @@ select:focus:not(:focus-visible) {
   margin-bottom: 0;
 }
 
+.form-field-stack > input.venta-cliente-filter,
+.form-field-stack > select.venta-cliente-persona-filter {
+  margin-bottom: 8px;
+}
+
 .form-field-stack .field-error {
   margin: 6px 0 0;
 }
@@ -363,6 +410,32 @@ select:focus:not(:focus-visible) {
   font-weight: 600;
   color: var(--pm-text-muted);
   margin: 0 0 6px;
+}
+
+/** Título de bloque (ej. grupo Cliente en ventas): más visible que los sub-campos */
+.form-field-label--section {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--pm-text);
+  margin: 0 0 8px;
+}
+
+/**
+ * Sub-etiquetas bajo un grupo (debe ir después de .form-field-label para ganar en cascada).
+ * Más pequeñas, menos peso, viñeta lateral para jerarquía visual.
+ */
+.form-field-label.form-field-label--nested {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--pm-text-muted);
+  margin: 12px 0 5px;
+  padding-left: 10px;
+  border-left: 3px solid var(--pm-brand-500);
+}
+
+.form-field-stack.venta-cliente-field-group > .form-field-label.form-field-label--nested:first-of-type {
+  margin-top: 0;
 }
 
 /* Montos (₡) y masas (kg) al estilo “sufijo/prefijo” en el borde del campo */
@@ -489,6 +562,35 @@ table.admin-matrix {
 .ghost-btn:hover:not(:disabled) {
   background: var(--pm-brand-50);
   border-color: var(--pm-brand-500);
+}
+
+.venta-form-subtabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 var(--pm-space-md);
+}
+
+.venta-form-subtabs button {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  border-radius: var(--pm-radius-sm);
+  border: 1px solid var(--pm-border);
+  background: var(--pm-bg-muted);
+  color: var(--pm-text-muted);
+  cursor: pointer;
+}
+
+.venta-form-subtabs button:hover:not(.active) {
+  color: var(--pm-text);
+  border-color: var(--pm-border-strong);
+}
+
+.venta-form-subtabs button.active {
+  background: var(--pm-nav-active);
+  color: var(--pm-nav-active-contrast);
+  border-color: var(--pm-nav-active);
 }
 
 .top-tabs {
@@ -1520,4 +1622,72 @@ button:disabled {
 
 .kpi strong.kpi-positive {
   color: var(--pm-brand-800);
+}
+
+/* Reparto por lote (Ventas): gastos objetivo + pagos socias */
+.ventas-reparto-panel {
+  margin-top: var(--pm-space-md, 16px);
+  padding-top: var(--pm-space-md, 12px);
+  border-top: 1px solid var(--pm-border);
+}
+
+.ventas-reparto-panel-title {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.ventas-reparto-gastos-row {
+  margin-bottom: 12px;
+}
+
+.ventas-reparto-gastos-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.ventas-reparto-table-wrap {
+  margin-bottom: 10px;
+}
+
+.ventas-reparto-table th.ventas-reparto-col-hecho,
+.ventas-reparto-table td.ventas-reparto-col-hecho {
+  width: 4.5rem;
+  text-align: center;
+}
+
+.reparto-check-btn {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 2px solid var(--pm-border);
+  border-radius: var(--pm-radius-sm, 6px);
+  background: var(--pm-bg);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0;
+  color: var(--pm-text-muted, #666);
+}
+
+.reparto-check-btn:hover:not(:disabled) {
+  border-color: var(--pm-accent, #2a6);
+}
+
+.reparto-check-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.reparto-check-btn--done {
+  background: rgba(46, 125, 50, 0.14);
+  border-color: #2e7d32;
+  color: #1b5e20;
+  font-weight: 700;
+}
+
+.ventas-reparto-neto {
+  margin: 8px 0 0;
+  font-size: 0.92rem;
 }

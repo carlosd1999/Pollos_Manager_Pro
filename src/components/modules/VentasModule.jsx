@@ -1,5 +1,6 @@
 import VentaForm from '../forms/VentaForm';
 import VentasList from '../lists/VentasList';
+import { MODULE_FORM_SCROLL_TARGET_ID } from '../../lib/scrollUi';
 
 export default function VentasModule(props) {
   const {
@@ -19,12 +20,16 @@ export default function VentasModule(props) {
     confirmDeleteVenta,
     submitAbono,
     confirmDeleteAbono,
+    guardarRepartoGastosObjetivo,
+    liquidarRepartoBucket,
+    deshacerUltimoRepartoPago,
     formResetGeneration,
+    currentUserFullName,
   } = props;
 
   return (
     <section className="module-split">
-      <div className="module-form">
+      <div className="module-form" id={MODULE_FORM_SCROLL_TARGET_ID}>
         <VentaForm
           form={form}
           setForm={setForm}
@@ -36,6 +41,7 @@ export default function VentasModule(props) {
           handleVenta={handleVenta}
           editingVentaId={editingVentaId}
           formResetGeneration={formResetGeneration}
+          currentUserFullName={currentUserFullName}
           onCancelEdit={cancelOperacionesEdit}
         />
       </div>
@@ -47,6 +53,9 @@ export default function VentasModule(props) {
           confirmDeleteVenta={confirmDeleteVenta}
           submitAbono={submitAbono}
           confirmDeleteAbono={confirmDeleteAbono}
+          guardarRepartoGastosObjetivo={guardarRepartoGastosObjetivo}
+          liquidarRepartoBucket={liquidarRepartoBucket}
+          deshacerUltimoRepartoPago={deshacerUltimoRepartoPago}
           filtroCicloLabel={vistaCicloLabel}
         />
       </div>

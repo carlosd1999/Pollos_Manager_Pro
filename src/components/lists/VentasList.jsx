@@ -1,13 +1,25 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
-import { effectivePaidVenta, sortLotesOldestFirst } from '../../lib/business';
+import { effectivePaidVenta, sortLotesOldestFirst, VENTA_PAGO_EPS } from '../../lib/business';
 import { formatColones } from '../../lib/formatCurrency';
 import { parseDecimalNumber } from '../../lib/parseDecimalInput';
+import {
+  pendienteBucket,
+  sumRepartoPagosLoteBucket,
+  tercioReparto,
+  totalPendienteRepartoLote,
+} from '../../lib/repartoLote';
 import {
   VENTA_PAYMENT_METHOD_OPTIONS,
   VENTA_PAYMENT_METHOD_VALUES,
   labelMetodoPago,
 } from '../../constants/payments';
+import {
+  REPARTO_BUCKET_GASTOS,
+  REPARTO_SOCIO_FILAS,
+  SOCIAS_REPARTO_TERCIO_COUNT,
+  labelRepartoBucket,
+} from '../../constants/sociasReparto';
 import {
   IconChevronArriba,
   IconEditar,
@@ -26,13 +38,31 @@ function emptyAbono() {
   return { fecha: dayjs().format('YYYY-MM-DD'), monto: '', metodo_pago: '', observaciones: '' };
 }
 
-function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDeleteVenta, submitAbono, confirmDeleteAbono, filtroCicloLabel }) {
+/** Texto para el input de monto a partir del saldo (2 decimales máx.). */
+function montoSaldoParaInput(saldo) {
+  if (!Number.isFinite(saldo) || saldo <= 0) return '';
+  const r = Math.round(saldo * 100) / 100;
+  return String(r);
+}
+
+function VentasList({
+  data,
+  lotesWithAvailability,
+  startEditVenta,
+  confirmDeleteVenta,
+  submitAbono,
+  confirmDeleteAbono,
+  filtroCicloLabel,
+  guardarRepartoGastosObjetivo,
+  liquidarRepartoBucket,
+  deshacerUltimoRepartoPago,
+}) {
   const [expandedId, setExpandedId] = useState(null);
   const [abonoDraftByVenta, setAbonoDraftByVenta] = useState({});
   const [filtroLoteId, setFiltroLoteId] = useState('');
   /** Si el usuario cambia el desplegable, deja de sobrescribir con el lote por defecto. */
   const [filtroLoteManual, setFiltroLoteManual] = useState(false);
-  const [simGastos, setSimGastos] = useState('50000');
+  const [simGastos, setSimGastos] = useState('');
 
   const clienteNombre = (id) => data.clientes.find((c) => c.id === id)?.nombre || id;
   const loteLabel = (id) => {
@@ -110,9 +140,49 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
 
   const repartoPorTercio = useMemo(() => {
     const net = resumenVentas.total - gastosSimulado;
-    const each = net / 3;
+    const each = net / SOCIAS_REPARTO_TERCIO_COUNT;
     return { net, each };
   }, [resumenVentas.total, gastosSimulado]);
+
+  const loteSeleccionado = useMemo(() => {
+    if (!filtroLoteId) return null;
+    return data.lotes.find((l) => String(l.id) === String(filtroLoteId)) || null;
+  }, [filtroLoteId, data.lotes]);
+
+  useEffect(() => {
+    if (!filtroLoteId) setSimGastos('');
+  }, [filtroLoteId]);
+
+  useEffect(() => {
+    if (!loteSeleccionado) return;
+    const raw = loteSeleccionado.reparto_gastos_objetivo;
+    const next =
+      raw != null && raw !== '' && Number.isFinite(Number(raw)) ? String(Number(raw)) : '';
+    setSimGastos((prev) => {
+      const a = parseDecimalNumber(prev);
+      const b = parseDecimalNumber(next);
+      const na = Number.isFinite(a) ? a : 0;
+      const nb = Number.isFinite(b) ? b : 0;
+      if (na === nb) return prev;
+      return next;
+    });
+  }, [loteSeleccionado?.id, loteSeleccionado?.reparto_gastos_objetivo]);
+
+  const pagosRepartoLote = useMemo(() => {
+    if (!filtroLoteId) return [];
+    const lid = Number(filtroLoteId);
+    return (data.lote_reparto_pagos || []).filter((p) => Number(p.lote_id) === lid);
+  }, [data.lote_reparto_pagos, filtroLoteId]);
+
+  const totalPendienteReparto = useMemo(() => {
+    if (!filtroLoteId) return null;
+    return totalPendienteRepartoLote({
+      totalVentasLote: resumenVentas.total,
+      gastosObjetivo: gastosSimulado,
+      pagos: pagosRepartoLote,
+      loteId: filtroLoteId,
+    });
+  }, [filtroLoteId, resumenVentas.total, gastosSimulado, pagosRepartoLote]);
 
   /** Pollos totales; peso y precio/kg solo sobre ventas ya pesadas (peso_total > 0). */
   const estadisticasVentas = useMemo(() => {
@@ -158,7 +228,30 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
     setExpandedId((cur) => {
       const next = cur === ventaId ? null : ventaId;
       if (next != null) {
-        setAbonoDraftByVenta((d) => ({ ...d, [next]: d[next] || emptyAbono() }));
+        const venta = data.ventas.find((x) => Number(x.id) === Number(next));
+        setAbonoDraftByVenta((d) => {
+          const prev = d[next];
+          const base = emptyAbono();
+          if (!prev) {
+            return {
+              ...d,
+              [next]: {
+                ...base,
+                fecha: dayjs().format('YYYY-MM-DD'),
+                metodo_pago: venta?.metodo_pago || '',
+              },
+            };
+          }
+          return {
+            ...d,
+            [next]: {
+              ...base,
+              ...prev,
+              fecha: prev.fecha || dayjs().format('YYYY-MM-DD'),
+              metodo_pago: prev.metodo_pago || venta?.metodo_pago || '',
+            },
+          };
+        });
       }
       return next;
     });
@@ -174,7 +267,11 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
   const handleSubmitAbono = async (ventaId) => {
     const draft = abonoDraftByVenta[ventaId] || emptyAbono();
     await submitAbono(ventaId, draft);
-    setDraft(ventaId, { monto: '', observaciones: '', metodo_pago: '', fecha: dayjs().format('YYYY-MM-DD') });
+    setDraft(ventaId, {
+      monto: '',
+      observaciones: '',
+      fecha: dayjs().format('YYYY-MM-DD'),
+    });
   };
 
   return (
@@ -183,9 +280,10 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
       <p className="lists-hint">
         {filtroCicloLabel && (
           <>
-            Mostrando <strong>{filtroCicloLabel}</strong>. Cambia el ciclo en la cabecera para ver todos.{' '}
+            Mostrando <strong>{filtroCicloLabel}</strong>.
           </>
         )}
+        <br />
         Usa el icono de lista para abrir cobros y registrar abonos. El saldo se actualiza solo.
       </p>
       <div className="ventas-list-toolbar form-field-stack">
@@ -239,7 +337,7 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
             )}
             {ventasFiltradas.map((v) => {
               const paid = effectivePaidVenta(v, data.abonos);
-              const saldo = Number(v.saldo_pendiente ?? Math.max(0, Number(v.total_venta || 0) - paid));
+              const saldo = Math.max(0, Number(v.total_venta || 0) - paid);
               const list = abonosPorVenta[v.id] || [];
               return (
                 <Fragment key={v.id}>
@@ -363,6 +461,16 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
                                   onChange={(e) => setDraft(v.id, { monto: e.target.value })}
                                 />
                               </div>
+                              {saldo > 0.01 && (
+                                <button
+                                  type="button"
+                                  className="ghost-btn"
+                                  style={{ marginTop: 6 }}
+                                  onClick={() => setDraft(v.id, { monto: montoSaldoParaInput(saldo) })}
+                                >
+                                  Usar saldo pendiente ({formatColones(saldo)})
+                                </button>
+                              )}
                             </div>
                             <div className="form-field-stack">
                               <label className="form-field-label" htmlFor={`abono-metodo-${v.id}`}>
@@ -419,18 +527,35 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
           {formatColones(resumenVentas.total)}
         </p>
         {resumenVentas.filas.length > 0 ? (
-          <>
-            <ul className="ventas-resumen-pagos-list">
-              {resumenVentas.filas.map((row, idx) => (
-                <li key={row.key ? `${row.key}-${idx}` : `pago-${idx}`} className="ventas-resumen-pagos-row">
-                  <span>{row.label}</span>
-                  <strong>{formatColones(row.monto)}</strong>
-                </li>
-              ))}
-              <li className="ventas-resumen-pagos-row ventas-resumen-pagos-row--gastos-input">
-                <label className="ventas-reparto-gastos-label" htmlFor="ventas-sim-gastos">
-                  Gastos a descontar
-                </label>
+          <ul className="ventas-resumen-pagos-list">
+            {resumenVentas.filas.map((row, idx) => (
+              <li key={row.key ? `${row.key}-${idx}` : `pago-${idx}`} className="ventas-resumen-pagos-row">
+                <span>{row.label}</span>
+                <strong>{formatColones(row.monto)}</strong>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="lists-hint" style={{ marginTop: 4 }}>
+            No hay montos por forma de pago (sin ventas o totales en cero).
+          </p>
+        )}
+
+        {!filtroLoteId || lotesOrdenados.find((l) => l.id === Number(filtroLoteId))?.disponibles !== 0 && (
+          <p className="lists-hint" style={{ marginTop: 10 }}>
+            Para <strong>gastos a descontar</strong>, <strong>tercios</strong> y marcar <strong>pagos a socias</strong>,
+            elegí un lote en el filtro de arriba <strong>con 0 disponibles</strong>.
+          </p>
+        )}
+
+        {filtroLoteId && lotesOrdenados.find((l) => l.id === Number(filtroLoteId))?.disponibles === 0 && (
+          <div className="ventas-reparto-panel">
+            <h4 className="ventas-reparto-panel-title">Reparto del {filtroLoteLabel || `#${filtroLoteId}`}</h4>
+            <div className="ventas-reparto-gastos-row form-field-stack">
+              <label className="form-field-label" htmlFor="ventas-sim-gastos">
+                Gastos a descontar
+              </label>
+              <div className="ventas-reparto-gastos-controls">
                 <div className="input-affix ventas-reparto-gastos-affix">
                   <span className="input-affix-symbol input-affix-symbol--leading" aria-hidden="true">
                     ₡
@@ -445,25 +570,101 @@ function VentasList({ data, lotesWithAvailability, startEditVenta, confirmDelete
                     aria-describedby="ventas-reparto-hint"
                   />
                 </div>
-              </li>
-              <li className="ventas-resumen-pagos-row">
-                <span>Carmen</span>
-                <strong>{formatColones(repartoPorTercio.each)}</strong>
-              </li>
-              <li className="ventas-resumen-pagos-row">
-                <span>Cherania</span>
-                <strong>{formatColones(repartoPorTercio.each)}</strong>
-              </li>
-              <li className="ventas-resumen-pagos-row">
-                <span>Chino</span>
-                <strong>{formatColones(repartoPorTercio.each)}</strong>
-              </li>
-            </ul>
-          </>
-        ) : (
-          <p className="lists-hint" style={{ marginTop: 4 }}>
-            No hay montos por forma de pago (sin ventas o totales en cero).
-          </p>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => guardarRepartoGastosObjetivo(Number(filtroLoteId), simGastos)}
+                >
+                  Guardar objetivo
+                </button>
+              </div>
+            </div>
+
+            <div className="table-wrap ventas-reparto-table-wrap">
+              <table className="data-table ventas-reparto-table">
+                <thead>
+                  <tr>
+                    <th>Rubro</th>
+                    <th>Objetivo</th>
+                    <th>Pagado</th>
+                    <th>Pendiente</th>
+                    <th className="ventas-reparto-col-hecho">Hecho</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const lid = Number(filtroLoteId);
+                    const gObj = gastosSimulado;
+                    const pagadoG = sumRepartoPagosLoteBucket(pagosRepartoLote, lid, REPARTO_BUCKET_GASTOS);
+                    const pendG = pendienteBucket({ objetivo: gObj, pagado: pagadoG });
+                    const tercio = tercioReparto(resumenVentas.total, gObj);
+                    const rows = [
+                      {
+                        bucket: REPARTO_BUCKET_GASTOS,
+                        label: labelRepartoBucket(REPARTO_BUCKET_GASTOS),
+                        objetivo: gObj,
+                        pagado: pagadoG,
+                        pendiente: pendG,
+                      },
+                      ...REPARTO_SOCIO_FILAS.map(({ bucket, nombre }) => {
+                        const pag = sumRepartoPagosLoteBucket(pagosRepartoLote, lid, bucket);
+                        return {
+                          bucket,
+                          label: nombre,
+                          objetivo: tercio,
+                          pagado: pag,
+                          pendiente: pendienteBucket({ objetivo: tercio, pagado: pag }),
+                        };
+                      }),
+                    ];
+                    return rows.map((row) => {
+                      const liquidado = row.pendiente <= VENTA_PAGO_EPS;
+                      return (
+                        <tr key={row.bucket}>
+                          <td>{row.label}</td>
+                          <td>{formatColones(row.objetivo)}</td>
+                          <td>{formatColones(row.pagado)}</td>
+                          <td>{formatColones(row.pendiente)}</td>
+                          <td className="ventas-reparto-col-hecho">
+                            <button
+                              type="button"
+                              className={`reparto-check-btn${liquidado ? ' reparto-check-btn--done' : ''}`}
+                              disabled={!liquidado && row.pendiente <= VENTA_PAGO_EPS}
+                              title={
+                                liquidado
+                                  ? 'Clic para deshacer el último pago de este rubro'
+                                  : 'Registrar pago del pendiente y marcar hecho'
+                              }
+                              aria-label={
+                                liquidado
+                                  ? `Deshacer último pago: ${row.label}`
+                                  : `Pagar pendiente ${formatColones(row.pendiente)}: ${row.label}`
+                              }
+                              onClick={() => {
+                                if (liquidado) {
+                                  void deshacerUltimoRepartoPago(lid, row.bucket);
+                                } else if (row.pendiente > VENTA_PAGO_EPS) {
+                                  void liquidarRepartoBucket(lid, row.bucket, row.pendiente);
+                                }
+                              }}
+                            >
+                              {liquidado ? '✓' : ''}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="ventas-reparto-neto">
+              <strong>Neto a repartir (tercios):</strong> {formatColones(repartoPorTercio.net)} 
+              <br />
+              <strong>Pendiente total reparto:</strong> {formatColones(totalPendienteReparto ?? 0)}
+            </p>
+          </div>
         )}
         {ventasFiltradas.length > 0 && (
           <div className="ventas-resumen-estadisticas">

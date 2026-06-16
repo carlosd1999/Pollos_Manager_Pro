@@ -18,7 +18,7 @@ export function validateGasto(gasto, options = {}) {
 }
 
 export function validateVenta(venta, lote, options = {}) {
-  const { editingVenta } = options;
+  const { editingVenta, disallowApartado } = options;
   const errors = {};
   if (!venta.cliente_id) errors['venta.cliente_id'] = 'Selecciona un cliente';
   if (!lote) errors['venta.lote_id'] = 'Selecciona un lote valido';
@@ -40,9 +40,14 @@ export function validateVenta(venta, lote, options = {}) {
   if (lote && cantidad > cupo) errors['venta.cantidad'] = 'No puedes vender mas de los disponibles';
 
   if (pesoStr === '' || !Number.isFinite(pesoTotal)) {
-    errors['venta.peso_total'] = 'Indica el peso total en kg (usa 0 para apartado sin pesar)';
+    errors['venta.peso_total'] = disallowApartado
+      ? 'Indica el peso total en kg'
+      : 'Indica el peso total en kg (usa 0 solo en la pestaña Apartado)';
   } else if (pesoTotal < 0) {
     errors['venta.peso_total'] = 'El peso no puede ser negativo';
+  } else if (disallowApartado && pesoTotal === 0) {
+    errors['venta.peso_total'] =
+      'En venta normal el peso debe ser mayor a cero. Usa la pestaña Apartado para reservar sin pesar.';
   } else if (pesoTotal > 0 && (!Number.isFinite(precioKg) || precioKg <= 0)) {
     errors['venta.precio_kg'] = 'El precio por kg debe ser mayor a cero cuando hay peso';
   }

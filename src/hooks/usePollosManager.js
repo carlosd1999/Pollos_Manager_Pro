@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import { createInitialForm, TABLES } from '../constants/app';
+import { REPARTO_BUCKETS_VALIDOS, labelRepartoBucket } from '../constants/sociasReparto';
 import { formatColones } from '../lib/formatCurrency';
 import {
   calculateAvailableByLote,
@@ -13,8 +14,10 @@ import {
   nextCicloNumero,
   nextLoteNumber,
   sortLotesOldestFirst,
+  VENTA_PAGO_EPS,
 } from '../lib/business';
 import { parseDecimalNumber } from '../lib/parseDecimalInput';
+import { scrollModuleFormIntoView } from '../lib/scrollUi';
 import { supabase } from '../lib/supabase';
 import {
   closeCiclo,
@@ -23,9 +26,11 @@ import {
   createCliente,
   createGasto,
   createLote,
+  createLoteRepartoPago,
   createMortalidad,
   createVenta,
   deleteAbono,
+  deleteLastLoteRepartoPago,
   deleteCliente,
   deleteGasto,
   deleteLote,
@@ -35,6 +40,7 @@ import {
   recalculateVentaEstado,
   updateCliente,
   updateGasto,
+  updateLote,
   updateMortalidad,
   updateVenta,
 } from '../services/pollosService';
@@ -72,6 +78,10 @@ const COLORS = [
   "#636363", // gris oscuro
 ];
 
+/** Mensajes de éxito/error en header: auto-cierra para no quedar pegados. */
+const STATUS_SUCCESS_DISMISS_MS = 5000;
+const STATUS_ERROR_DISMISS_MS = 8000;
+
 export function usePollosManager(user, rowOwnerId) {
   const [tab, setTab] = useState('dashboard');
   const [data, setData] = useState({
@@ -82,12 +92,14 @@ export function usePollosManager(user, rowOwnerId) {
     ventas: [],
     clientes: [],
     abonos: [],
+    lote_reparto_pagos: [],
   });
   const [form, setForm] = useState(createInitialForm);
   /** Se incrementa en cada resetForm() para que VentaForm vuelva a aplicar el lote sugerido. */
   const [formResetGeneration, setFormResetGeneration] = useState(0);
   const [status, setStatus] = useState('');
   const [statusType, setStatusType] = useState('info');
+  const statusDismissTimerRef = useRef(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [editingGastoId, setEditingGastoId] = useState(null);
   const [editingVentaId, setEditingVentaId] = useState(null);
@@ -110,15 +122,47 @@ export function usePollosManager(user, rowOwnerId) {
     setFormResetGeneration((g) => g + 1);
   };
 
+  const clearStatusDismissTimer = () => {
+    if (statusDismissTimerRef.current != null) {
+      clearTimeout(statusDismissTimerRef.current);
+      statusDismissTimerRef.current = null;
+    }
+  };
+
+  const dismissStatus = useCallback(() => {
+    clearStatusDismissTimer();
+    setStatus('');
+  }, []);
+
+  const scheduleStatusAutoDismiss = (ms) => {
+    clearStatusDismissTimer();
+    statusDismissTimerRef.current = window.setTimeout(() => {
+      statusDismissTimerRef.current = null;
+      setStatus('');
+    }, ms);
+  };
+
   const setErrorStatus = (message) => {
     setStatus(message);
     setStatusType('error');
+    scheduleStatusAutoDismiss(STATUS_ERROR_DISMISS_MS);
   };
 
   const setSuccessStatus = (message) => {
     setStatus(message);
     setStatusType('success');
+    scheduleStatusAutoDismiss(STATUS_SUCCESS_DISMISS_MS);
   };
+
+  useEffect(
+    () => () => {
+      if (statusDismissTimerRef.current != null) {
+        clearTimeout(statusDismissTimerRef.current);
+        statusDismissTimerRef.current = null;
+      }
+    },
+    [],
+  );
 
   const inputClass = (fieldKey) => (fieldErrors[fieldKey] ? 'input-error' : '');
 
@@ -190,6 +234,7 @@ export function usePollosManager(user, rowOwnerId) {
       abonos: data.abonos.filter((a) => ventaIds.has(Number(a.venta_id))),
       lotes,
       mortalidad: data.mortalidad.filter((m) => loteIds.has(Number(m.lote_id))),
+      lote_reparto_pagos: (data.lote_reparto_pagos || []).filter((p) => loteIds.has(Number(p.lote_id))),
     };
   }, [data, vistaCicloId]);
 
@@ -399,13 +444,29 @@ export function usePollosManager(user, rowOwnerId) {
     }
   };
 
-  const handleVenta = async () => {
+  const handleVenta = async (opts = {}) => {
     if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
+    if (opts.apartado && editingVentaId) {
+      return setErrorStatus('Los apartados solo se registran como venta nueva.');
+    }
     try {
-      const venta = form.venta;
+      const venta = opts.apartado
+        ? {
+            ...form.venta,
+            peso_total: '0',
+            precio_kg: String(form.venta.precio_kg ?? '').trim() === '' ? '0' : form.venta.precio_kg,
+            total_redondeado: '',
+            pagoCompleto: false,
+            primerAbono: '',
+            metodo_pago: '',
+          }
+        : form.venta;
       const lote = lotesWithAvailability.find((item) => item.id === Number(venta.lote_id));
       const editingVenta = editingVentaId ? data.ventas.find((v) => v.id === editingVentaId) : null;
-      const { errors, cantidad, pesoTotal, precioKg, isApartado } = validateVenta(venta, lote, { editingVenta });
+      const { errors, cantidad, pesoTotal, precioKg, isApartado } = validateVenta(venta, lote, {
+        editingVenta,
+        disallowApartado: !opts.apartado && !editingVentaId,
+      });
       const apartadoPagoErrors = {};
       if (isApartado && (venta.pagoCompleto || (venta.primerAbono !== '' && parseDecimalNumber(venta.primerAbono) > 0))) {
         apartadoPagoErrors['venta.peso_total'] =
@@ -507,10 +568,12 @@ export function usePollosManager(user, rowOwnerId) {
         base.monto_cancelado = totalVenta;
         base.saldo_pendiente = 0;
         base.estado_pago = 'pagado';
+        base.venta_al_contado = true;
       } else {
         base.monto_cancelado = 0;
         base.saldo_pendiente = totalVenta;
         base.estado_pago = 'pendiente';
+        base.venta_al_contado = false;
       }
 
       const { data: inserted, error: ventaError } = await createVenta(base);
@@ -646,7 +709,8 @@ export function usePollosManager(user, rowOwnerId) {
     clearEditing();
     setEditingGastoId(g.id);
     setFieldErrors({});
-    setStatus('');
+    dismissStatus();
+    scrollModuleFormIntoView();
   };
 
   const startEditVenta = (v) => {
@@ -668,7 +732,8 @@ export function usePollosManager(user, rowOwnerId) {
     clearEditing();
     setEditingVentaId(v.id);
     setFieldErrors({});
-    setStatus('');
+    dismissStatus();
+    scrollModuleFormIntoView();
   };
 
   const startEditMortalidad = (m) => {
@@ -684,7 +749,8 @@ export function usePollosManager(user, rowOwnerId) {
     clearEditing();
     setEditingMortalidadId(m.id);
     setFieldErrors({});
-    setStatus('');
+    dismissStatus();
+    scrollModuleFormIntoView();
   };
 
   const startEditCliente = (c) => {
@@ -699,12 +765,14 @@ export function usePollosManager(user, rowOwnerId) {
     clearEditing();
     setEditingClienteId(c.id);
     setFieldErrors({});
-    setStatus('');
+    dismissStatus();
+    scrollModuleFormIntoView();
   };
 
   const cancelOperacionesEdit = () => {
     resetForm();
     clearEditing();
+    dismissStatus();
   };
 
   const confirmDeleteGasto = async (id) => {
@@ -811,12 +879,16 @@ export function usePollosManager(user, rowOwnerId) {
       const abonosDeVenta = data.abonos.filter((a) => Number(a.venta_id) === Number(ventaId));
       const total = Number(venta.total_venta || 0);
       const paid = effectivePaidVenta(venta, data.abonos);
-      if (abonosDeVenta.length === 0 && paid >= total - 1e-6 && total > 0) {
+      const saldoRest = Math.max(0, total - paid);
+      if (abonosDeVenta.length === 0 && paid >= total - VENTA_PAGO_EPS && total > 0) {
         return setErrorStatus(
           'Esta venta figura como pagada al contado. Para llevar abonos, la venta debe estar a crédito sin ese pago único.',
         );
       }
-      if (paid + monto > total + 1e-6) {
+      if (monto > saldoRest + VENTA_PAGO_EPS) {
+        return setErrorStatus('El abono no puede ser mayor al saldo pendiente.');
+      }
+      if (paid + monto > total + VENTA_PAGO_EPS) {
         return setErrorStatus('El abono supera el saldo pendiente de la venta.');
       }
       const { error } = await createAbono({
@@ -846,6 +918,59 @@ export function usePollosManager(user, rowOwnerId) {
       if (re) throw new Error(re.message);
       await readAll();
       setSuccessStatus('Abono eliminado');
+    } catch (error) {
+      setErrorStatus(error.message);
+    }
+  };
+
+  const guardarRepartoGastosObjetivo = async (loteId, montoStr) => {
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
+    try {
+      const m = parseDecimalNumber(montoStr);
+      if (!Number.isFinite(m) || m < 0) {
+        return setErrorStatus('Ingresá un monto de gastos válido (cero o más).');
+      }
+      const { error } = await updateLote(loteId, { reparto_gastos_objetivo: m });
+      if (error) throw new Error(error.message);
+      await readAll();
+      setSuccessStatus('Objetivo de gastos del lote guardado');
+    } catch (error) {
+      setErrorStatus(error.message);
+    }
+  };
+
+  const liquidarRepartoBucket = async (loteId, bucket, monto) => {
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
+    if (!REPARTO_BUCKETS_VALIDOS.includes(bucket)) return setErrorStatus('Rubro de reparto inválido.');
+    const amt = Number(monto);
+    if (!Number.isFinite(amt) || amt <= VENTA_PAGO_EPS) return;
+    if (!window.confirm(`¿Registrar pago de ${formatColones(amt)} (${labelRepartoBucket(bucket)})?`)) return;
+    try {
+      const { error } = await createLoteRepartoPago({
+        user_id: rowOwnerId,
+        lote_id: Number(loteId),
+        bucket,
+        monto: amt,
+        fecha: dayjs().format('YYYY-MM-DD'),
+        observaciones: null,
+      });
+      if (error) throw new Error(error.message);
+      await readAll();
+      setSuccessStatus('Pago de reparto registrado');
+    } catch (error) {
+      setErrorStatus(error.message);
+    }
+  };
+
+  const deshacerUltimoRepartoPago = async (loteId, bucket) => {
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
+    if (!REPARTO_BUCKETS_VALIDOS.includes(bucket)) return setErrorStatus('Rubro de reparto inválido.');
+    if (!window.confirm(`¿Eliminar el último pago de «${labelRepartoBucket(bucket)}» en este lote?`)) return;
+    try {
+      const { error } = await deleteLastLoteRepartoPago(Number(loteId), bucket);
+      if (error) throw new Error(error.message);
+      await readAll();
+      setSuccessStatus('Último pago eliminado');
     } catch (error) {
       setErrorStatus(error.message);
     }
@@ -936,6 +1061,7 @@ export function usePollosManager(user, rowOwnerId) {
     setForm,
     status,
     statusType,
+    dismissStatus,
     fieldErrors,
     setFieldErrors,
     inputClass,
@@ -973,6 +1099,9 @@ export function usePollosManager(user, rowOwnerId) {
     confirmDeleteCliente,
     submitAbono,
     confirmDeleteAbono,
+    guardarRepartoGastosObjetivo,
+    liquidarRepartoBucket,
+    deshacerUltimoRepartoPago,
     cerrarCicloPorId,
     abrirNuevoCiclo,
     siguienteLoteCompra,

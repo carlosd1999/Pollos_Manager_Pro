@@ -30,8 +30,6 @@ function IconSun() {
 
 function StatusHeader({
   hasSupabaseConfig,
-  status,
-  statusType,
   userEmail,
   onLogout,
   theme,
@@ -89,11 +87,11 @@ function StatusHeader({
           </select>
         </div>
       )}
-      {(status || !hasSupabaseConfig) &&
-        <p className={`status ${statusType}`}>
-          {hasSupabaseConfig ? status : 'Configura VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY para habilitar datos'}
+      {!hasSupabaseConfig && (
+        <p className="status info">
+          Configura VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY para habilitar datos
         </p>
-      }
+      )}
     </header>
   );
 }

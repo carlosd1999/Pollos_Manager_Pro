@@ -63,6 +63,7 @@ create table if not exists ventas (
   monto_cancelado numeric(12,2) default 0,
   saldo_pendiente numeric(12,2) default 0,
   estado_pago text default 'pendiente',
+  venta_al_contado boolean not null default false,
   created_at timestamptz default now()
 );
 

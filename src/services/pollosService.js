@@ -1,3 +1,9 @@
+import {
+  paidFromVentaRowWithoutAbonos,
+  sortAbonosNewestFirst,
+  sumAbonoMontos,
+  VENTA_PAGO_EPS,
+} from '../lib/business';
 import { supabase } from '../lib/supabase';
 
 export async function fetchTable(table) {
@@ -14,6 +20,10 @@ export async function closeCiclo(cicloId, payload) {
 
 export async function createLote(payload) {
   return supabase.from('lotes').insert(payload).select().single();
+}
+
+export async function updateLote(id, payload) {
+  return supabase.from('lotes').update(payload).eq('id', id);
 }
 
 export async function createGasto(payload) {
@@ -81,28 +91,57 @@ export async function deleteAbono(id) {
 }
 
 /**
- * Recalcula monto_cancelado, saldo_pendiente y estado_pago a partir de abonos
- * (si no hay abonos, mantiene lógica por monto_cancelado en venta).
+ * Recalcula monto_cancelado, saldo_pendiente, estado_pago y `metodo_pago` de la venta (último abono).
  */
 export async function recalculateVentaEstado(ventaId) {
   const { data: venta, error: e1 } = await supabase.from('ventas').select('*').eq('id', ventaId).single();
   if (e1 || !venta) return { error: e1 || new Error('Venta no encontrada') };
-  const { data: abRows } = await supabase.from('abonos').select('monto').eq('venta_id', ventaId);
+  const { data: abRows, error: e2 } = await supabase
+    .from('abonos')
+    .select('id, fecha, monto, metodo_pago')
+    .eq('venta_id', ventaId);
+  if (e2) return { error: e2 };
   const list = abRows || [];
-  const sumAb = list.reduce((s, a) => s + Number(a.monto || 0), 0);
+  const sorted = sortAbonosNewestFirst(list);
   const total = Number(venta.total_venta || 0);
-  let paid = list.length > 0 ? sumAb : Number(venta.monto_cancelado || 0);
+  const sumAb = sumAbonoMontos(list);
+  let paid = list.length > 0 ? sumAb : paidFromVentaRowWithoutAbonos(venta);
   if (paid > total) paid = total;
   const saldo = Math.max(0, total - paid);
   let estado = 'pendiente';
-  if (total > 0 && saldo <= 0.0001) estado = 'pagado';
-  else if (paid > 0 && saldo > 0.0001) estado = 'parcial';
-  return supabase
-    .from('ventas')
-    .update({
-      monto_cancelado: paid,
-      saldo_pendiente: saldo,
-      estado_pago: estado,
-    })
-    .eq('id', ventaId);
+  if (total > 0 && saldo <= VENTA_PAGO_EPS) estado = 'pagado';
+  else if (paid > VENTA_PAGO_EPS && saldo > VENTA_PAGO_EPS) estado = 'parcial';
+
+  const updatePayload = {
+    monto_cancelado: paid,
+    saldo_pendiente: saldo,
+    estado_pago: estado,
+  };
+  if (sorted.length > 0) {
+    const last = sorted[0];
+    if (last?.metodo_pago && String(last.metodo_pago).trim()) {
+      updatePayload.metodo_pago = last.metodo_pago;
+    }
+  } else if (!venta.venta_al_contado) {
+    updatePayload.metodo_pago = null;
+  }
+
+  return supabase.from('ventas').update(updatePayload).eq('id', ventaId);
+}
+
+export async function createLoteRepartoPago(payload) {
+  return supabase.from('lote_reparto_pagos').insert(payload).select().single();
+}
+
+export async function deleteLastLoteRepartoPago(loteId, bucket) {
+  const { data: rows, error } = await supabase
+    .from('lote_reparto_pagos')
+    .select('id')
+    .eq('lote_id', loteId)
+    .eq('bucket', bucket)
+    .order('id', { ascending: false })
+    .limit(1);
+  if (error) return { error };
+  if (!rows?.length) return { error: null };
+  return supabase.from('lote_reparto_pagos').delete().eq('id', rows[0].id);
 }

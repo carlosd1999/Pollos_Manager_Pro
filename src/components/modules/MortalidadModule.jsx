@@ -1,5 +1,6 @@
 import MortalidadForm from '../forms/MortalidadForm';
 import MortalidadList from '../lists/MortalidadList';
+import { MODULE_FORM_SCROLL_TARGET_ID } from '../../lib/scrollUi';
 
 export default function MortalidadModule(props) {
   const {
@@ -22,7 +23,7 @@ export default function MortalidadModule(props) {
 
   return (
     <section className="module-split">
-      <div className="module-form">
+      <div className="module-form" id={MODULE_FORM_SCROLL_TARGET_ID}>
         <MortalidadForm
           form={form}
           setForm={setForm}
