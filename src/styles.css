@@ -1687,6 +1687,14 @@ button:disabled {
   font-weight: 700;
 }
 
+.ventas-reparto-rebaja-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--pm-text-muted, #666);
+}
+
 .ventas-reparto-neto {
   margin: 8px 0 0;
   font-size: 0.92rem;

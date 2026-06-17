@@ -3,6 +3,7 @@ export const REPARTO_BUCKET_GASTOS = 'gastos';
 
 /**
  * Filas de socias: bucket en BD + nombre para UI (tercios iguales).
+ * La rebaja del tercio usa ventas del lote al cliente cuyo `nombre` coincide (normalizado, sin tildes).
  */
 export const REPARTO_SOCIO_FILAS = [
   { bucket: 'carmen', nombre: 'Carmen Lopez' },

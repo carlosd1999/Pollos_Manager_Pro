@@ -4,8 +4,10 @@ import { effectivePaidVenta, sortLotesOldestFirst, VENTA_PAGO_EPS } from '../../
 import { formatColones } from '../../lib/formatCurrency';
 import { parseDecimalNumber } from '../../lib/parseDecimalInput';
 import {
+  clienteIdPorNombreSocio,
   pendienteBucket,
   sumRepartoPagosLoteBucket,
+  sumVentasLotePorClienteId,
   tercioReparto,
   totalPendienteRepartoLote,
 } from '../../lib/repartoLote';
@@ -174,6 +176,19 @@ function VentasList({
     return (data.lote_reparto_pagos || []).filter((p) => Number(p.lote_id) === lid);
   }, [data.lote_reparto_pagos, filtroLoteId]);
 
+  /** Compras del lote registradas como ventas al cliente con el mismo nombre que la socia (rebajan su tercio). */
+  const rebajasSocioPorBucket = useMemo(() => {
+    const acc = { carmen: 0, cherania: 0, carlos: 0 };
+    if (!filtroLoteId) return acc;
+    const lid = Number(filtroLoteId);
+    for (const row of REPARTO_SOCIO_FILAS) {
+      const cid = clienteIdPorNombreSocio(data.clientes, row.nombre);
+      acc[row.bucket] =
+        cid != null ? sumVentasLotePorClienteId(data.ventas, lid, cid) : 0;
+    }
+    return acc;
+  }, [filtroLoteId, data.clientes, data.ventas]);
+
   const totalPendienteReparto = useMemo(() => {
     if (!filtroLoteId) return null;
     return totalPendienteRepartoLote({
@@ -181,8 +196,9 @@ function VentasList({
       gastosObjetivo: gastosSimulado,
       pagos: pagosRepartoLote,
       loteId: filtroLoteId,
+      rebajasSocio: rebajasSocioPorBucket,
     });
-  }, [filtroLoteId, resumenVentas.total, gastosSimulado, pagosRepartoLote]);
+  }, [filtroLoteId, resumenVentas.total, gastosSimulado, pagosRepartoLote, rebajasSocioPorBucket]);
 
   /** Pollos totales; peso y precio/kg solo sobre ventas ya pesadas (peso_total > 0). */
   const estadisticasVentas = useMemo(() => {
@@ -541,14 +557,15 @@ function VentasList({
           </p>
         )}
 
-        {!filtroLoteId || lotesOrdenados.find((l) => l.id === Number(filtroLoteId))?.disponibles !== 0 && (
+        {(!filtroLoteId ||
+          Number(lotesOrdenados.find((l) => Number(l.id) === Number(filtroLoteId))?.disponibles) !== 0) && (
           <p className="lists-hint" style={{ marginTop: 10 }}>
             Para <strong>gastos a descontar</strong>, <strong>tercios</strong> y marcar <strong>pagos a socias</strong>,
             elegí un lote en el filtro de arriba <strong>con 0 disponibles</strong>.
           </p>
         )}
 
-        {filtroLoteId && lotesOrdenados.find((l) => l.id === Number(filtroLoteId))?.disponibles === 0 && (
+        {filtroLoteId && lotesOrdenados.find((l) => Number(l.id) === Number(filtroLoteId))?.disponibles === 0 && (
           <div className="ventas-reparto-panel">
             <h4 className="ventas-reparto-panel-title">Reparto del {filtroLoteLabel || `#${filtroLoteId}`}</h4>
             <div className="ventas-reparto-gastos-row form-field-stack">
@@ -607,13 +624,16 @@ function VentasList({
                         pendiente: pendG,
                       },
                       ...REPARTO_SOCIO_FILAS.map(({ bucket, nombre }) => {
+                        const reb = rebajasSocioPorBucket[bucket] || 0;
                         const pag = sumRepartoPagosLoteBucket(pagosRepartoLote, lid, bucket);
+                        const obj = Math.max(0, tercio - reb);
                         return {
                           bucket,
                           label: nombre,
-                          objetivo: tercio,
+                          rebaja: reb,
+                          objetivo: obj,
                           pagado: pag,
-                          pendiente: pendienteBucket({ objetivo: tercio, pagado: pag }),
+                          pendiente: pendienteBucket({ objetivo: obj, pagado: pag }),
                         };
                       }),
                     ];
@@ -621,7 +641,15 @@ function VentasList({
                       const liquidado = row.pendiente <= VENTA_PAGO_EPS;
                       return (
                         <tr key={row.bucket}>
-                          <td>{row.label}</td>
+                          <td>
+                            {row.label}
+                            {row.rebaja != null && row.rebaja > VENTA_PAGO_EPS && (
+                              <span className="ventas-reparto-rebaja-hint">
+                                <br />
+                                Rebaja compras en lote (ventas a este cliente): {formatColones(row.rebaja)}
+                              </span>
+                            )}
+                          </td>
                           <td>{formatColones(row.objetivo)}</td>
                           <td>{formatColones(row.pagado)}</td>
                           <td>{formatColones(row.pendiente)}</td>
@@ -658,6 +686,11 @@ function VentasList({
                 </tbody>
               </table>
             </div>
+
+            <p id="ventas-reparto-hint" className="lists-hint" style={{ marginTop: 8 }}>
+              Si una socia compró pollos de este lote y la venta está a su nombre en <strong>Clientes</strong> (mismo
+              texto que arriba), el total de esas ventas se <strong>resta de su tercio</strong>.
+            </p>
 
             <p className="ventas-reparto-neto">
               <strong>Neto a repartir (tercios):</strong> {formatColones(repartoPorTercio.net)} 

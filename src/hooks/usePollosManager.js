@@ -572,8 +572,8 @@ export function usePollosManager(user, rowOwnerId) {
       } else {
         base.monto_cancelado = 0;
         base.saldo_pendiente = totalVenta;
-        base.estado_pago = 'pendiente';
         base.venta_al_contado = false;
+        base.estado_pago = 'pendiente';
       }
 
       const { data: inserted, error: ventaError } = await createVenta(base);
