@@ -22,7 +22,7 @@ export default function GastosModule(props) {
   } = props;
 
   const editingGasto = editingGastoId ? data.gastos.find((g) => g.id === editingGastoId) : null;
-  const lockPurchaseFields = Boolean(editingGasto?.lote_id);
+  const lockPurchaseCategory = Boolean(editingGasto?.lote_id);
 
   return (
     <section className="module-split">
@@ -35,7 +35,7 @@ export default function GastosModule(props) {
           setFieldErrors={setFieldErrors}
           handleGasto={handleGasto}
           purchaseCategory={purchaseCategory}
-          lockPurchaseFields={lockPurchaseFields}
+          lockPurchaseCategory={lockPurchaseCategory}
           editingGastoId={editingGastoId}
           onCancelEdit={cancelOperacionesEdit}
           ciclos={data.ciclos || []}

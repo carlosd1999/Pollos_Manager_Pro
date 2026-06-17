@@ -31,16 +31,18 @@ export function defaultVentaClientePersonaFromFullName(fullName) {
 }
 
 /** Pestaña inicial en «Registrar venta»: Apartado para Carmen / Carlos / Cherania (según nombre en sesión). */
-export function defaultRegistrarVentaTabFromFullName(fullName) {
+export function defaultRegistrarVentaTabFromFullName(fullName, isAdmin) {
   const raw = String(fullName ?? '')
     .trim()
     .toLowerCase();
   if (!raw) return 'venta';
+  if (isAdmin) return 'venta';
   for (const p of VENTA_DEFAULT_APARTADO_TAB_NAMES) {
     if (raw.includes(p.toLowerCase())) return 'apartado';
   }
   const first = (raw.split(/\s+/)[0] || '').trim();
   if (!first) return 'venta';
+  if (isAdmin) return 'venta';
   for (const p of VENTA_DEFAULT_APARTADO_TAB_NAMES) {
     const pl = p.toLowerCase();
     if (first === pl || first.startsWith(pl)) return 'apartado';

@@ -48,10 +48,10 @@ function VentaForm({
   onCancelEdit,
   formResetGeneration = 0,
   currentUserFullName = '',
+  isAdmin,
 }) {
   const isEditing = Boolean(editingVentaId);
   const lockClienteLote = isEditing;
-
   const lotesOrdenados = useMemo(
     () => sortLotesOldestFirst(lotesWithAvailability || []),
     [lotesWithAvailability],
@@ -450,7 +450,8 @@ function VentaForm({
 
       {!isEditing && (
         <div className="venta-form-subtabs" role="tablist" aria-label="Tipo de registro">
-          <button
+
+          {isAdmin && <button
             type="button"
             role="tab"
             aria-selected={registrarTab === 'venta'}
@@ -459,6 +460,7 @@ function VentaForm({
           >
             Venta
           </button>
+          }
           <button
             type="button"
             role="tab"

@@ -13,6 +13,7 @@ import {
   EXPENSE_CATEGORY_PURCHASE,
   nextCicloNumero,
   nextLoteNumber,
+  pollosComprometidosPorLote,
   sortLotesOldestFirst,
   VENTA_PAGO_EPS,
 } from '../lib/business';
@@ -375,6 +376,16 @@ export function usePollosManager(user, rowOwnerId) {
           setFieldErrors(errors);
           return setErrorStatus('Corrige los campos en rojo');
         }
+        if (existing.lote_id) {
+          const nuevaCantidad = Number(gastoForm.cantidad_pollos);
+          const minima = pollosComprometidosPorLote(existing.lote_id, data.ventas, data.mortalidad);
+          if (nuevaCantidad < minima) {
+            setFieldErrors({
+              'gasto.cantidad_pollos': `No puede ser menor a ${minima} (ventas y mortalidad ya registradas en este lote).`,
+            });
+            return setErrorStatus('La cantidad comprada no puede quedar por debajo de lo ya vendido o dado de baja.');
+          }
+        }
         setFieldErrors({});
         const { error: gastoError } = await updateGasto(editingGastoId, {
           fecha: gastoForm.fecha,
@@ -385,6 +396,16 @@ export function usePollosManager(user, rowOwnerId) {
           lote_id: existing.lote_id,
         });
         if (gastoError) throw new Error(gastoError.message);
+        if (existing.lote_id) {
+          const cantidadComprada = Number(gastoForm.cantidad_pollos);
+          const { error: loteError } = await updateLote(existing.lote_id, {
+            fecha_ingreso: gastoForm.fecha,
+            cantidad_comprada: cantidadComprada,
+            precio_compra: parsedAmount,
+            precio_unitario: cantidadComprada ? parsedAmount / cantidadComprada : 0,
+          });
+          if (loteError) throw new Error(loteError.message);
+        }
         await readAll();
         resetForm();
         clearEditing();

@@ -361,6 +361,7 @@ function App() {
           guardarRepartoGastosObjetivo={guardarRepartoGastosObjetivo}
           liquidarRepartoBucket={liquidarRepartoBucket}
           deshacerUltimoRepartoPago={deshacerUltimoRepartoPago}
+          isAdmin={isAdmin}
         />
       )}
 

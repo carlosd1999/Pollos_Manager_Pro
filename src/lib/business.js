@@ -87,6 +87,20 @@ export function sortLotesOldestFirst(lotes) {
   return [...(lotes || [])].sort(compareLotesOldestFirst);
 }
 
+/** Pollos ya vendidos o dados de baja en un lote; la comprada no puede bajar de esta suma. */
+export function pollosComprometidosPorLote(loteId, ventas, mortalidad) {
+  const id = Number(loteId);
+  const sold = (ventas || []).reduce(
+    (acc, v) => acc + (Number(v.lote_id) === id ? Number(v.cantidad || 0) : 0),
+    0,
+  );
+  const dead = (mortalidad || []).reduce(
+    (acc, m) => acc + (Number(m.lote_id) === id ? Number(m.cantidad || 0) : 0),
+    0,
+  );
+  return sold + dead;
+}
+
 export function calculateAvailableByLote(lotes, mortalidad, ventas) {
   const soldByLote = ventas.reduce((acc, venta) => {
     acc[venta.lote_id] = (acc[venta.lote_id] || 0) + Number(venta.cantidad || 0);

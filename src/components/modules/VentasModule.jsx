@@ -25,6 +25,7 @@ export default function VentasModule(props) {
     deshacerUltimoRepartoPago,
     formResetGeneration,
     currentUserFullName,
+    isAdmin,
   } = props;
 
   return (
@@ -43,6 +44,7 @@ export default function VentasModule(props) {
           formResetGeneration={formResetGeneration}
           currentUserFullName={currentUserFullName}
           onCancelEdit={cancelOperacionesEdit}
+          isAdmin={isAdmin}
         />
       </div>
       <div className="module-table">
@@ -56,7 +58,8 @@ export default function VentasModule(props) {
           guardarRepartoGastosObjetivo={guardarRepartoGastosObjetivo}
           liquidarRepartoBucket={liquidarRepartoBucket}
           deshacerUltimoRepartoPago={deshacerUltimoRepartoPago}
-          filtroCicloLabel={vistaCicloLabel}
+          filtroCicloLabel={vistaCicloLabel}  
+          isAdmin={isAdmin}
         />
       </div>
     </section>

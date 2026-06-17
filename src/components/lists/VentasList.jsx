@@ -58,6 +58,7 @@ function VentasList({
   guardarRepartoGastosObjetivo,
   liquidarRepartoBucket,
   deshacerUltimoRepartoPago,
+  isAdmin,
 }) {
   const [expandedId, setExpandedId] = useState(null);
   const [abonoDraftByVenta, setAbonoDraftByVenta] = useState({});
@@ -129,9 +130,11 @@ function VentasList({
       const monto = porMetodo[met];
       if (monto > 0) filas.push({ key: met, label: labelMetodoPago(met), monto });
     }
-    filas.push({ key: '', label: 'Total cancelado', monto: filas
-      .filter(item => item.key !== "")
-      .reduce((sum, item) => sum + item.monto, 0) });
+    filas.push({
+      key: 'Cancelado', label: 'Total cancelado', monto: filas
+        .filter(item => item.key !== "")
+        .reduce((sum, item) => sum + item.monto, 0)
+    });
     return { total, filas };
   }, [ventasFiltradas]);
 
@@ -188,6 +191,21 @@ function VentasList({
     }
     return acc;
   }, [filtroLoteId, data.clientes, data.ventas]);
+
+  const totalDisponibleReparto = useMemo(() => {
+    const totalRepartos = REPARTO_SOCIO_FILAS
+    .map(({ bucket }) => sumRepartoPagosLoteBucket(pagosRepartoLote, filtroLoteId, bucket))
+    .reduce((sum, item) => sum + item, 0);
+
+    const montoCancelado = resumenVentas.filas
+      .filter(item => item.key === 'Cancelado')
+      .reduce((sum, item) => sum + item.monto, 0);
+
+    const rebajasSocio = REPARTO_SOCIO_FILAS.map(({ bucket }) => rebajasSocioPorBucket[bucket])
+    .reduce((sum, item) => sum + item, 0);
+
+    return montoCancelado - totalRepartos - rebajasSocio;
+  }, [resumenVentas.filas, pagosRepartoLote]);
 
   const totalPendienteReparto = useMemo(() => {
     if (!filtroLoteId) return null;
@@ -559,13 +577,13 @@ function VentasList({
 
         {(!filtroLoteId ||
           Number(lotesOrdenados.find((l) => Number(l.id) === Number(filtroLoteId))?.disponibles) !== 0) && (
-          <p className="lists-hint" style={{ marginTop: 10 }}>
-            Para <strong>gastos a descontar</strong>, <strong>tercios</strong> y marcar <strong>pagos a socias</strong>,
-            elegí un lote en el filtro de arriba <strong>con 0 disponibles</strong>.
-          </p>
-        )}
+            <p className="lists-hint" style={{ marginTop: 10 }}>
+              Para <strong>gastos a descontar</strong>, <strong>tercios</strong> y marcar <strong>pagos a socias</strong>,
+              elegí un lote en el filtro de arriba <strong>con 0 disponibles</strong>.
+            </p>
+          )}
 
-        {filtroLoteId && lotesOrdenados.find((l) => Number(l.id) === Number(filtroLoteId))?.disponibles === 0 && (
+        {isAdmin && filtroLoteId && lotesOrdenados.find((l) => Number(l.id) === Number(filtroLoteId))?.disponibles === 0 && (
           <div className="ventas-reparto-panel">
             <h4 className="ventas-reparto-panel-title">Reparto del {filtroLoteLabel || `#${filtroLoteId}`}</h4>
             <div className="ventas-reparto-gastos-row form-field-stack">
@@ -693,9 +711,11 @@ function VentasList({
             </p>
 
             <p className="ventas-reparto-neto">
-              <strong>Neto a repartir (tercios):</strong> {formatColones(repartoPorTercio.net)} 
+              <strong>Neto a repartir (tercios):</strong> {formatColones(repartoPorTercio.net)}
               <br />
               <strong>Pendiente total reparto:</strong> {formatColones(totalPendienteReparto ?? 0)}
+              <br />
+              <strong>Total disponible para reparto:</strong> {formatColones(totalDisponibleReparto ?? 0)}
             </p>
           </div>
         )}
@@ -712,9 +732,9 @@ function VentasList({
                 <strong>
                   {estadisticasVentas.pesoPromedioPorPolloKg != null
                     ? `${estadisticasVentas.pesoPromedioPorPolloKg.toLocaleString('es-CR', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })} kg`
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })} kg`
                     : '—'}
                 </strong>
               </li>

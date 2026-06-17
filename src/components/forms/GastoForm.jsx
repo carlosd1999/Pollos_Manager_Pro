@@ -9,7 +9,7 @@ function GastoForm({
   setFieldErrors,
   handleGasto,
   purchaseCategory,
-  lockPurchaseFields,
+  lockPurchaseCategory,
   editingGastoId,
   onCancelEdit,
   ciclos = [],
@@ -100,7 +100,7 @@ function GastoForm({
         <select
           id="gasto-categoria"
           value={form.gasto.categoria}
-          disabled={lockPurchaseFields}
+          disabled={lockPurchaseCategory}
           onChange={(e) => setForm({ ...form, gasto: { ...form.gasto, categoria: e.target.value } })}
         >
           {expenseCategories.map((cat) => (
@@ -108,7 +108,11 @@ function GastoForm({
           ))}
         </select>
       </div>
-      {lockPurchaseFields && <p className="lists-hint" style={{ margin: '0 0 8px' }}>Categoría y pollos fijados por el lote vinculado.</p>}
+      {lockPurchaseCategory && (
+        <p className="lists-hint" style={{ margin: '0 0 8px' }}>
+          La categoría queda fijada porque este gasto creó un lote; puedes corregir cantidad, monto y fecha (se actualiza el lote).
+        </p>
+      )}
       {form.gasto.categoria === purchaseCategory && !isEditing && form.gasto.ciclo_id && siguienteLoteCompra != null && (
         <p className="lists-hint" style={{ margin: '0 0 8px' }}>
           En el ciclo elegido, esta compra será el <strong>lote {siguienteLoteCompra}</strong>.
@@ -125,7 +129,6 @@ function GastoForm({
             inputMode="numeric"
             autoComplete="off"
             value={form.gasto.cantidad_pollos}
-            disabled={lockPurchaseFields}
             onChange={(e) => {
               setForm({ ...form, gasto: { ...form.gasto, cantidad_pollos: e.target.value } });
               setFieldErrors((prev) => ({ ...prev, 'gasto.cantidad_pollos': '' }));

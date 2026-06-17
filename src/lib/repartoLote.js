@@ -5,7 +5,7 @@ export function sumVentasLotePorClienteId(ventas, loteId, clienteId) {
   const cid = Number(clienteId);
   if (!Number.isFinite(lid) || !Number.isFinite(cid)) return 0;
   return (ventas || [])
-    .filter((v) => Number(v.lote_id) === lid && Number(v.cliente_id) === cid)
+    .filter((v) => Number(v.lote_id) === lid && Number(v.cliente_id) === cid && v.estado_pago === 'pagado')
     .reduce((s, v) => s + Number(v.total_venta || 0), 0);
 }
 
