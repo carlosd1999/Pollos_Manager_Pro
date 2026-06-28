@@ -47,6 +47,14 @@ function montoSaldoParaInput(saldo) {
   return String(r);
 }
 
+/** Peso total guardado en la venta (kg); apartados sin pesar muestran —. */
+function formatPesoKg(peso) {
+  const n = Number(peso);
+  if (!Number.isFinite(n) || n <= 0) return '—';
+  const texto = n.toLocaleString('es-CR', { minimumFractionDigits: 0, maximumFractionDigits: 3 });
+  return `${texto} kg`;
+}
+
 function VentasList({
   data,
   lotesWithAvailability,
@@ -109,34 +117,59 @@ function VentasList({
   }, [data.ventas, filtroLoteId]);
 
   const resumenVentas = useMemo(() => {
+    const PENDIENTE_KEY = '__pendiente__';
     let total = 0;
     const porMetodo = {};
     for (const v of ventasFiltradas) {
       const t = Number(v.total_venta || 0);
       total += t;
-      const key = v.metodo_pago && String(v.metodo_pago).trim() ? String(v.metodo_pago) : '';
-      porMetodo[key] = (porMetodo[key] || 0) + t;
+      const paid = effectivePaidVenta(v, data.abonos);
+      const abonos = abonosPorVenta[Number(v.id)] || [];
+
+      if (abonos.length > 0) {
+        for (const a of abonos) {
+          const monto = Number(a.monto || 0);
+          if (monto <= 0) continue;
+          const key = a.metodo_pago && String(a.metodo_pago).trim() ? String(a.metodo_pago) : '';
+          porMetodo[key] = (porMetodo[key] || 0) + monto;
+        }
+      } else if (paid > VENTA_PAGO_EPS) {
+        const key = v.metodo_pago && String(v.metodo_pago).trim() ? String(v.metodo_pago) : '';
+        porMetodo[key] = (porMetodo[key] || 0) + paid;
+      }
+
+      const saldo = Math.max(0, t - paid);
+      if (saldo > VENTA_PAGO_EPS) {
+        porMetodo[PENDIENTE_KEY] = (porMetodo[PENDIENTE_KEY] || 0) + saldo;
+      }
     }
+
+    const totalCancelado = Object.entries(porMetodo)
+      .filter(([k]) => k !== PENDIENTE_KEY)
+      .reduce((sum, [, monto]) => sum + monto, 0);
+
     const filas = [];
-    const sin = porMetodo[''] || 0;
-    if (sin > 0) filas.push({ key: '', label: 'Pendiente', monto: sin });
+    const pendiente = porMetodo[PENDIENTE_KEY] || 0;
+    if (pendiente > 0) filas.push({ key: PENDIENTE_KEY, label: 'Pendiente', monto: pendiente });
     for (const met of VENTA_PAYMENT_METHOD_VALUES) {
       const monto = porMetodo[met];
       if (monto > 0) filas.push({ key: met, label: labelMetodoPago(met), monto });
     }
-    const otrosKeys = Object.keys(porMetodo).filter((k) => !VENTA_PAYMENT_METHOD_VALUES.includes(k) && k !== '');
+    const otrosKeys = Object.keys(porMetodo).filter(
+      (k) => !VENTA_PAYMENT_METHOD_VALUES.includes(k) && k !== PENDIENTE_KEY && k !== '',
+    );
     otrosKeys.sort();
     for (const met of otrosKeys) {
       const monto = porMetodo[met];
       if (monto > 0) filas.push({ key: met, label: labelMetodoPago(met), monto });
     }
-    filas.push({
-      key: 'Cancelado', label: 'Total cancelado', monto: filas
-        .filter(item => item.key !== "")
-        .reduce((sum, item) => sum + item.monto, 0)
-    });
-    return { total, filas };
-  }, [ventasFiltradas]);
+    const sinMetodo = porMetodo[''] || 0;
+    if (sinMetodo > 0) filas.push({ key: '', label: 'Sin método', monto: sinMetodo });
+    if (totalCancelado > 0) {
+      filas.push({ key: 'Cancelado', label: 'Total cancelado', monto: totalCancelado });
+    }
+    return { total, totalCancelado, filas };
+  }, [ventasFiltradas, abonosPorVenta, data.abonos]);
 
   const gastosSimulado = useMemo(() => {
     const n = parseDecimalNumber(simGastos);
@@ -197,15 +230,13 @@ function VentasList({
     .map(({ bucket }) => sumRepartoPagosLoteBucket(pagosRepartoLote, filtroLoteId, bucket))
     .reduce((sum, item) => sum + item, 0);
 
-    const montoCancelado = resumenVentas.filas
-      .filter(item => item.key === 'Cancelado')
-      .reduce((sum, item) => sum + item.monto, 0);
+    const montoCancelado = resumenVentas.totalCancelado;
 
     const rebajasSocio = REPARTO_SOCIO_FILAS.map(({ bucket }) => rebajasSocioPorBucket[bucket])
     .reduce((sum, item) => sum + item, 0);
 
     return montoCancelado - totalRepartos - rebajasSocio;
-  }, [resumenVentas.filas, pagosRepartoLote]);
+  }, [resumenVentas.totalCancelado, pagosRepartoLote, rebajasSocioPorBucket, filtroLoteId]);
 
   const totalPendienteReparto = useMemo(() => {
     if (!filtroLoteId) return null;
@@ -263,9 +294,14 @@ function VentasList({
       const next = cur === ventaId ? null : ventaId;
       if (next != null) {
         const venta = data.ventas.find((x) => Number(x.id) === Number(next));
+        const paid = venta ? effectivePaidVenta(venta, data.abonos) : 0;
+        const saldoVenta = Math.max(0, Number(venta?.total_venta || 0) - paid);
+        const sinAbonos = (abonosPorVenta[next] || []).length === 0;
         setAbonoDraftByVenta((d) => {
           const prev = d[next];
           const base = emptyAbono();
+          const montoInicial =
+            sinAbonos && saldoVenta > VENTA_PAGO_EPS ? montoSaldoParaInput(saldoVenta) : '';
           if (!prev) {
             return {
               ...d,
@@ -273,6 +309,7 @@ function VentasList({
                 ...base,
                 fecha: dayjs().format('YYYY-MM-DD'),
                 metodo_pago: venta?.metodo_pago || '',
+                monto: montoInicial,
               },
             };
           }
@@ -283,6 +320,7 @@ function VentasList({
               ...prev,
               fecha: prev.fecha || dayjs().format('YYYY-MM-DD'),
               metodo_pago: prev.metodo_pago || venta?.metodo_pago || '',
+              monto: prev.monto !== '' ? prev.monto : montoInicial,
             },
           };
         });
@@ -340,14 +378,14 @@ function VentasList({
           ))}
         </select>
       </div>
-      <div className="table-wrap">
-        <table className="data-table">
+      <div className="table-wrap ventas-table-wrap table-cards-mobile">
+        <table className="data-table ventas-main-table">
           <thead>
             <tr>
               <th>Fecha</th>
               <th>Cliente</th>
-              <th>Lote</th>
               <th>Cant.</th>
+              <th>Peso</th>
               <th>Total</th>
               <th>Cobrado</th>
               <th>Saldo</th>
@@ -361,12 +399,12 @@ function VentasList({
           <tbody>
             {data.ventas.length === 0 && (
               <tr>
-                <td colSpan={10}>Sin ventas aún.</td>
+                <td colSpan={11}>Sin ventas aún.</td>
               </tr>
             )}
             {data.ventas.length > 0 && ventasFiltradas.length === 0 && (
               <tr>
-                <td colSpan={10}>Ninguna venta en el lote seleccionado.</td>
+                <td colSpan={11}>Ninguna venta en el lote seleccionado.</td>
               </tr>
             )}
             {ventasFiltradas.map((v) => {
@@ -375,17 +413,17 @@ function VentasList({
               const list = abonosPorVenta[v.id] || [];
               return (
                 <Fragment key={v.id}>
-                  <tr>
-                    <td>{v.fecha}</td>
-                    <td>{clienteNombre(v.cliente_id)}</td>
-                    <td>{loteLabel(v.lote_id)}</td>
-                    <td>{v.cantidad}</td>
-                    <td>{formatColones(v.total_venta)}</td>
-                    <td>{formatColones(paid)}</td>
-                    <td>{formatColones(saldo)}</td>
-                    <td>{ESTADO_LABEL[v.estado_pago] || v.estado_pago}</td>
-                    <td>{labelMetodoPago(v.metodo_pago)}</td>
-                    <td className="col-actions">
+                  <tr className="venta-row">
+                    <td data-label="Fecha">{v.fecha}</td>
+                    <td data-label="Cliente">{clienteNombre(v.cliente_id)}</td>
+                    <td data-label="Cant.">{v.cantidad}</td>
+                    <td data-label="Peso">{formatPesoKg(v.peso_total)}</td>
+                    <td data-label="Total">{formatColones(v.total_venta)}</td>
+                    <td data-label="Cobrado">{formatColones(paid)}</td>
+                    <td data-label="Saldo">{formatColones(saldo)}</td>
+                    <td data-label="Estado">{ESTADO_LABEL[v.estado_pago] || v.estado_pago}</td>
+                    <td data-label="Pago">{labelMetodoPago(v.metodo_pago)}</td>
+                    <td className="col-actions" data-label="Acciones">
                       <div className="row-actions">
                         <button
                           type="button"
@@ -401,8 +439,8 @@ function VentasList({
                           type="button"
                           className="ghost-btn btn-icon"
                           onClick={() => startEditVenta(v)}
-                          aria-label="Editar venta"
-                          title="Editar venta"
+                          aria-label={isAdmin ? 'Editar venta' : 'Editar peso'}
+                          title={isAdmin ? 'Editar venta' : 'Editar peso'}
                         >
                           <IconEditar />
                         </button>
@@ -420,52 +458,53 @@ function VentasList({
                   </tr>
                   {expandedId === v.id && (
                     <tr className="abonos-row">
-                      <td colSpan={10}>
+                      <td colSpan={11}>
                         <div className="abonos-panel">
                           <p className="lists-hint" style={{ marginTop: 0 }}>
                             Pollos disponibles en este lote (referencia):{' '}
                             {disponibles[v.lote_id] ?? '—'}
+                            {' · '}
+                            Peso registrado: <strong>{formatPesoKg(v.peso_total)}</strong>
                           </p>
                           {list.length === 0 && (
                             <p className="lists-hint">Sin filas de abono; si la venta fue al contado, no se agregan abonos aquí.</p>
                           )}
                           {list.length > 0 && (
-                            <div className="table-wrap" style={{ marginBottom: 10 }}>
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>Fecha</th>
-                                    <th>Monto</th>
-                                    <th>Método</th>
-                                    <th>Nota</th>
-                                    <th className="col-actions" title="Acciones sobre el abono">
-                                      Acciones
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {list.map((a) => (
-                                    <tr key={a.id}>
-                                      <td>{a.fecha}</td>
-                                      <td>{formatColones(a.monto)}</td>
-                                      <td>{labelMetodoPago(a.metodo_pago)}</td>
-                                      <td>{a.observaciones || '—'}</td>
-                                      <td className="col-actions">
-                                        <button
-                                          type="button"
-                                          className="danger-btn btn-icon"
-                                          onClick={() => confirmDeleteAbono(a.id, v.id)}
-                                          aria-label="Eliminar abono"
-                                          title="Eliminar abono"
-                                        >
-                                          <IconEliminar />
-                                        </button>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
+                            <ul className="abonos-card-list">
+                              {list.map((a) => (
+                                <li key={a.id} className="abono-card">
+                                  <div className="abono-card-body">
+                                    <div className="abono-card-field">
+                                      <span className="abono-card-label">Fecha</span>
+                                      <span>{a.fecha}</span>
+                                    </div>
+                                    <div className="abono-card-field">
+                                      <span className="abono-card-label">Monto</span>
+                                      <strong>{formatColones(a.monto)}</strong>
+                                    </div>
+                                    <div className="abono-card-field">
+                                      <span className="abono-card-label">Método</span>
+                                      <span>{labelMetodoPago(a.metodo_pago)}</span>
+                                    </div>
+                                    {a.observaciones ? (
+                                      <div className="abono-card-field abono-card-field--full">
+                                        <span className="abono-card-label">Nota</span>
+                                        <span>{a.observaciones}</span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="danger-btn btn-icon"
+                                    onClick={() => confirmDeleteAbono(a.id, v.id)}
+                                    aria-label="Eliminar abono"
+                                    title="Eliminar abono"
+                                  >
+                                    <IconEliminar />
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
                           )}
                           <div className="abono-form-grid">
                             <div className="form-field-stack">
@@ -495,7 +534,7 @@ function VentasList({
                                   onChange={(e) => setDraft(v.id, { monto: e.target.value })}
                                 />
                               </div>
-                              {saldo > 0.01 && (
+                              {list.length > 0 && saldo > VENTA_PAGO_EPS && (
                                 <button
                                   type="button"
                                   className="ghost-btn"
@@ -535,12 +574,11 @@ function VentasList({
                             </div>
                             <button
                               type="button"
-                              className="btn-icon btn-icon--primary"
+                              className="abono-submit-btn"
                               onClick={() => handleSubmitAbono(v.id)}
-                              aria-label="Registrar abono"
-                              title="Registrar abono"
                             >
                               <IconRegistrarAbono />
+                              <span>Registrar abono</span>
                             </button>
                           </div>
                         </div>
@@ -615,7 +653,7 @@ function VentasList({
               </div>
             </div>
 
-            <div className="table-wrap ventas-reparto-table-wrap">
+            <div className="table-wrap ventas-reparto-table-wrap table-cards-mobile">
               <table className="data-table ventas-reparto-table">
                 <thead>
                   <tr>
@@ -659,7 +697,7 @@ function VentasList({
                       const liquidado = row.pendiente <= VENTA_PAGO_EPS;
                       return (
                         <tr key={row.bucket}>
-                          <td>
+                          <td data-label="Rubro">
                             {row.label}
                             {row.rebaja != null && row.rebaja > VENTA_PAGO_EPS && (
                               <span className="ventas-reparto-rebaja-hint">
@@ -668,10 +706,10 @@ function VentasList({
                               </span>
                             )}
                           </td>
-                          <td>{formatColones(row.objetivo)}</td>
-                          <td>{formatColones(row.pagado)}</td>
-                          <td>{formatColones(row.pendiente)}</td>
-                          <td className="ventas-reparto-col-hecho">
+                          <td data-label="Objetivo">{formatColones(row.objetivo)}</td>
+                          <td data-label="Pagado">{formatColones(row.pagado)}</td>
+                          <td data-label="Pendiente">{formatColones(row.pendiente)}</td>
+                          <td className="ventas-reparto-col-hecho" data-label="Hecho">
                             <button
                               type="button"
                               className={`reparto-check-btn${liquidado ? ' reparto-check-btn--done' : ''}`}
@@ -704,12 +742,6 @@ function VentasList({
                 </tbody>
               </table>
             </div>
-
-            <p id="ventas-reparto-hint" className="lists-hint" style={{ marginTop: 8 }}>
-              Si una socia compró pollos de este lote y la venta está a su nombre en <strong>Clientes</strong> (mismo
-              texto que arriba), el total de esas ventas se <strong>resta de su tercio</strong>.
-            </p>
-
             <p className="ventas-reparto-neto">
               <strong>Neto a repartir (tercios):</strong> {formatColones(repartoPorTercio.net)}
               <br />

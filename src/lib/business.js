@@ -21,6 +21,13 @@ export function nextCicloNumero(ciclos) {
 
 export const VENTA_PAGO_EPS = 1e-4;
 
+/** Apartado aún sin pesar (peso y total en cero). */
+export function ventaEsApartadoSinPesar(venta) {
+  const peso = Number(venta?.peso_total ?? 0);
+  const total = Number(venta?.total_venta ?? 0);
+  return peso <= VENTA_PAGO_EPS && total <= VENTA_PAGO_EPS;
+}
+
 /** Abonos más recientes primero (fecha, luego id). */
 export function sortAbonosNewestFirst(rows) {
   return [...(rows || [])].sort((a, b) => {

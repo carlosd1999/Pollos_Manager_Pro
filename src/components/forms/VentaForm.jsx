@@ -51,7 +51,8 @@ function VentaForm({
   isAdmin,
 }) {
   const isEditing = Boolean(editingVentaId);
-  const lockClienteLote = isEditing;
+  const edicionSoloPeso = isEditing && !isAdmin;
+  const lockLote = isEditing;
   const lotesOrdenados = useMemo(
     () => sortLotesOldestFirst(lotesWithAvailability || []),
     [lotesWithAvailability],
@@ -66,7 +67,9 @@ function VentaForm({
   const [personaClienteFiltro, setPersonaClienteFiltro] = useState(() =>
     defaultVentaClientePersonaFromFullName(currentUserFullName),
   );
-  const [registrarTab, setRegistrarTab] = useState(() => defaultRegistrarVentaTabFromFullName(currentUserFullName));
+  const [registrarTab, setRegistrarTab] = useState(() =>
+    defaultRegistrarVentaTabFromFullName(currentUserFullName, isAdmin),
+  );
   const prevFormResetGenRef = useRef(null);
 
   const selectRegistrarTab = (next) => {
@@ -80,8 +83,14 @@ function VentaForm({
   };
 
   useEffect(() => {
-    setRegistrarTab(defaultRegistrarVentaTabFromFullName(currentUserFullName));
-  }, [formResetGeneration, currentUserFullName]);
+    if (!isAdmin && registrarTab !== 'apartado') {
+      setRegistrarTab('apartado');
+    }
+  }, [isAdmin, registrarTab]);
+
+  useEffect(() => {
+    setRegistrarTab(defaultRegistrarVentaTabFromFullName(currentUserFullName, isAdmin));
+  }, [formResetGeneration, currentUserFullName, isAdmin]);
 
   useEffect(() => {
     if (editingVentaId) {
@@ -166,7 +175,6 @@ function VentaForm({
         id="venta-cliente-persona-filtro"
         className="venta-cliente-persona-filter"
         value={personaClienteFiltro}
-        disabled={lockClienteLote}
         aria-label="Filtrar clientes por persona"
         onChange={(e) => setPersonaClienteFiltro(e.target.value)}
       >
@@ -184,7 +192,6 @@ function VentaForm({
         id="venta-cliente"
         className={inputClass('venta.cliente_id')}
         value={form.venta.cliente_id}
-        disabled={lockClienteLote}
         onChange={(e) => {
           setForm({ ...form, venta: { ...form.venta, cliente_id: e.target.value } });
           setFieldErrors((prev) => ({ ...prev, 'venta.cliente_id': '' }));
@@ -219,7 +226,7 @@ function VentaForm({
         id="venta-lote"
         className={inputClass('venta.lote_id')}
         value={form.venta.lote_id === '' || form.venta.lote_id == null ? '' : String(form.venta.lote_id)}
-        disabled={lockClienteLote}
+        disabled={lockLote}
         onChange={(e) => {
           setLoteVentaManual(true);
           setForm({ ...form, venta: { ...form.venta, lote_id: e.target.value } });
@@ -282,16 +289,6 @@ function VentaForm({
           </span>
         </div>
         {fieldErrors['venta.peso_total'] && <p className="field-error">{fieldErrors['venta.peso_total']}</p>}
-        {isEditing && esApartado ? (
-          <p className="lists-hint" style={{ marginTop: 4 }}>
-            Esta venta es un <strong>apartado</strong> (peso 0). El stock ya bajó con la cantidad; al entregar, actualiza
-            peso y total aquí.
-          </p>
-        ) : isEditing && (
-          <p className="lists-hint" style={{ marginTop: 4 }}>
-            Ajusta peso, precio por kg o total según corresponda.
-          </p>
-        )}
       </div>
       <div className="form-field-stack">
         <label className="form-field-label" htmlFor="venta-precio-kg">
@@ -308,8 +305,10 @@ function VentaForm({
             className={inputClass('venta.precio_kg')}
             inputMode="decimal"
             autoComplete="off"
+            readOnly={edicionSoloPeso}
             value={form.venta.precio_kg}
             onChange={(e) => {
+              if (edicionSoloPeso) return;
               setForm((prev) => mergeVentaConRedondeo(prev, { precio_kg: e.target.value }));
               setFieldErrors((prev) => ({ ...prev, 'venta.precio_kg': '' }));
             }}
@@ -411,7 +410,7 @@ function VentaForm({
           )}
         </>
       )}
-      {(requiereMetodoPago || isEditing) && (
+      {(requiereMetodoPago || (isEditing && isAdmin)) && (
         <>
           <div className="form-field-stack">
             <label className="form-field-label" htmlFor="venta-metodo-pago">
@@ -444,14 +443,43 @@ function VentaForm({
     </>
   );
 
+  const clienteNombre = (id) => data.clientes.find((c) => c.id === id)?.nombre || id;
+  const loteNumero = (id) => {
+    const l = data.lotes.find((x) => x.id === id);
+    return l ? l.numero_lote : id;
+  };
+
+  const ventaEdicionResumen = edicionSoloPeso ? (
+    <div className="venta-edicion-resumen lists-hint">
+      <p className="venta-edicion-resumen-title">Datos de la venta (solo lectura)</p>
+      <ul className="venta-edicion-resumen-list">
+        <li>
+          <span>Fecha</span>
+          <strong>{form.venta.fecha}</strong>
+        </li>
+        <li>
+          <span>Cliente</span>
+          <strong>{clienteNombre(Number(form.venta.cliente_id))}</strong>
+        </li>
+        <li>
+          <span>Lote</span>
+          <strong>{loteNumero(Number(form.venta.lote_id))}</strong>
+        </li>
+        <li>
+          <span>Cantidad</span>
+          <strong>{form.venta.cantidad} pollo(s)</strong>
+        </li>
+      </ul>
+    </div>
+  ) : null;
+
   return (
     <article className="card">
-      <h3>{isEditing ? 'Editar venta' : 'Registrar venta'}</h3>
+      <h3>{edicionSoloPeso ? 'Editar peso de venta' : isEditing ? 'Editar venta' : 'Registrar venta'}</h3>
 
-      {!isEditing && (
+      {!isEditing && isAdmin && (
         <div className="venta-form-subtabs" role="tablist" aria-label="Tipo de registro">
-
-          {isAdmin && <button
+          <button
             type="button"
             role="tab"
             aria-selected={registrarTab === 'venta'}
@@ -460,7 +488,6 @@ function VentaForm({
           >
             Venta
           </button>
-          }
           <button
             type="button"
             role="tab"
@@ -472,22 +499,14 @@ function VentaForm({
           </button>
         </div>
       )}
-
-      {fechaField}
-      {clienteBlock}
-      {loteField}
-      {lockClienteLote && (
-        <p className="lists-hint" style={{ margin: '0 0 8px' }}>
-          Cliente y lote no se cambian al editar (evita inconsistencias de stock). Si necesitas otro lote, elimina y crea una venta nueva.
-        </p>
-      )}
-      {cantidadField}
-
+      {ventaEdicionResumen}
+      {!edicionSoloPeso && fechaField}
+      {!edicionSoloPeso && clienteBlock}
+      {!edicionSoloPeso && loteField}
+      {!edicionSoloPeso && cantidadField}
       {isEditing && pesoPrecioTotalYPagos}
-
       {!isEditing && registrarTab === 'venta' && pesoPrecioTotalYPagos}
-
-      {!isEditing && registrarTab === 'apartado' && (
+      {!isEditing && (isAdmin ? registrarTab === 'apartado' : true) && (
         <div className="form-actions">
           <button type="button" onClick={() => handleVenta({ apartado: true })}>
             Guardar apartado
@@ -495,7 +514,7 @@ function VentaForm({
         </div>
       )}
 
-      {(isEditing || registrarTab === 'venta') && (
+      {(isEditing || (isAdmin && registrarTab === 'venta')) && (
         <div className="form-actions">
           {isEditing && (
             <button type="button" className="ghost-btn" onClick={onCancelEdit}>
@@ -503,8 +522,8 @@ function VentaForm({
             </button>
           )}
           {isEditing ? (
-            <button type="button" onClick={() => handleVenta()}>
-              Actualizar venta
+            <button type="button" onClick={() => handleVenta({ soloPeso: edicionSoloPeso })}>
+              {edicionSoloPeso ? 'Guardar peso' : 'Actualizar venta'}
             </button>
           ) : (
             registrarTab === 'venta' && (

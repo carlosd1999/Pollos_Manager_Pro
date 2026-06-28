@@ -215,7 +215,7 @@ function App() {
     gastoPorCategoriaVista,
     utilidadPorCicloVista,
     formResetGeneration,
-  } = usePollosManager(session?.user, dataRowOwnerId);
+  } = usePollosManager(session?.user, dataRowOwnerId, { isAdmin });
 
   useEffect(() => {
     if (!hasSupabaseConfig || !session) return;

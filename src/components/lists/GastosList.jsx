@@ -53,7 +53,7 @@ function GastosList({ data, startEditGasto, confirmDeleteGasto, filtroCicloLabel
           ))}
         </select>
       </div>
-      <div className="table-wrap">
+      <div className="table-wrap table-cards-mobile">
         <table className="data-table">
           <thead>
             <tr>
@@ -76,10 +76,10 @@ function GastosList({ data, startEditGasto, confirmDeleteGasto, filtroCicloLabel
             )}
             {gastosFiltrados.map((g) => (
               <tr key={g.id}>
-                <td>{g.fecha}</td>
-                <td>{g.categoria}</td>
-                <td>{formatColones(g.monto)}</td>
-                <td className="col-actions">
+                <td data-label="Fecha">{g.fecha}</td>
+                <td data-label="Categoría">{g.categoria}</td>
+                <td data-label="Monto">{formatColones(g.monto)}</td>
+                <td className="col-actions" data-label="Acciones">
                   <div className="row-actions">
                     <button
                       type="button"
@@ -107,7 +107,7 @@ function GastosList({ data, startEditGasto, confirmDeleteGasto, filtroCicloLabel
           {data.gastos.length > 0 && (
             <tfoot>
               <tr className="gastos-list-total-row">
-                <td colSpan={2}>
+                <td colSpan={2} data-label="Total">
                   <strong>
                     Total
                     {filtroCategoria ? (
@@ -118,10 +118,9 @@ function GastosList({ data, startEditGasto, confirmDeleteGasto, filtroCicloLabel
                     ) : null}
                   </strong>
                 </td>
-                <td>
+                <td data-label="Monto total">
                   <strong>{formatColones(totalFiltrado)}</strong>
                 </td>
-                <td className="col-actions" />
               </tr>
             </tfoot>
           )}

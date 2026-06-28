@@ -5,7 +5,7 @@ function ClientesList({ data, startEditCliente, confirmDeleteCliente }) {
     <section className="card list-panel operaciones-lists">
       <h3>Clientes</h3>
       <p className="lists-hint">Directorio de clientes.</p>
-      <div className="table-wrap">
+      <div className="table-wrap table-cards-mobile">
         <table className="data-table">
           <thead>
             <tr>
@@ -23,10 +23,10 @@ function ClientesList({ data, startEditCliente, confirmDeleteCliente }) {
             )}
             {data.clientes.map((c) => (
               <tr key={c.id}>
-                <td>{c.nombre}</td>
-                <td>{c.telefono || '—'}</td>
-                <td>{c.direccion || '—'}</td>
-                <td className="col-actions">
+                <td data-label="Nombre">{c.nombre}</td>
+                <td data-label="Teléfono">{c.telefono || '—'}</td>
+                <td data-label="Dirección">{c.direccion || '—'}</td>
+                <td className="col-actions" data-label="Acciones">
                   <div className="row-actions">
                     <button
                       type="button"

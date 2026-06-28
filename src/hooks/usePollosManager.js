@@ -83,7 +83,7 @@ const COLORS = [
 const STATUS_SUCCESS_DISMISS_MS = 5000;
 const STATUS_ERROR_DISMISS_MS = 8000;
 
-export function usePollosManager(user, rowOwnerId) {
+export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
   const [tab, setTab] = useState('dashboard');
   const [data, setData] = useState({
     ciclos: [],
@@ -470,6 +470,9 @@ export function usePollosManager(user, rowOwnerId) {
     if (opts.apartado && editingVentaId) {
       return setErrorStatus('Los apartados solo se registran como venta nueva.');
     }
+    if (!isAdmin && !opts.apartado && !editingVentaId) {
+      return setErrorStatus('Solo puedes registrar apartados. Ingresa el peso editando la venta después.');
+    }
     try {
       const venta = opts.apartado
         ? {
@@ -482,9 +485,28 @@ export function usePollosManager(user, rowOwnerId) {
             metodo_pago: '',
           }
         : form.venta;
-      const lote = lotesWithAvailability.find((item) => item.id === Number(venta.lote_id));
       const editingVenta = editingVentaId ? data.ventas.find((v) => v.id === editingVentaId) : null;
-      const { errors, cantidad, pesoTotal, precioKg, isApartado } = validateVenta(venta, lote, {
+      const loteIdParaValidar =
+        editingVentaId && opts.soloPeso && editingVenta
+          ? editingVenta.lote_id
+          : venta.lote_id;
+      const lote = lotesWithAvailability.find((item) => item.id === Number(loteIdParaValidar));
+      let ventaParaValidar = venta;
+      if (editingVentaId && opts.soloPeso && editingVenta) {
+        ventaParaValidar = {
+          ...venta,
+          fecha: editingVenta.fecha,
+          cliente_id: String(editingVenta.cliente_id ?? ''),
+          lote_id: String(editingVenta.lote_id ?? ''),
+          cantidad: String(editingVenta.cantidad ?? ''),
+          metodo_pago: editingVenta.metodo_pago || '',
+          precio_kg:
+            String(venta.precio_kg ?? '').trim() !== ''
+              ? venta.precio_kg
+              : String(editingVenta.precio_kg ?? ''),
+        };
+      }
+      const { errors, cantidad, pesoTotal, precioKg, isApartado } = validateVenta(ventaParaValidar, lote, {
         editingVenta,
         disallowApartado: !opts.apartado && !editingVentaId,
       });
@@ -536,10 +558,10 @@ export function usePollosManager(user, rowOwnerId) {
       if (editingVentaId) {
         const existing = data.ventas.find((v) => v.id === editingVentaId);
         if (!existing) return setErrorStatus('Venta no encontrada');
-        const paid = effectivePaidVenta(existing, data.abonos);
-        if (totalVenta + 1e-6 < paid) {
-          return setErrorStatus('El total de la venta no puede ser menor al monto ya cobrado (abonos o pagos registrados).');
+        if (!isAdmin && !opts.soloPeso) {
+          return setErrorStatus('Solo puedes corregir el peso de la venta.');
         }
+        const paid = effectivePaidVenta(existing, data.abonos);
         const abonosDeEsta = (data.abonos || []).filter((a) => Number(a.venta_id) === Number(editingVentaId));
         const onlyLegacyPaid =
           abonosDeEsta.length === 0 && existing.estado_pago === 'pagado';
@@ -555,10 +577,29 @@ export function usePollosManager(user, rowOwnerId) {
           total_venta: totalVenta,
           metodo_pago: venta.metodo_pago || null,
         };
+        if (opts.soloPeso) {
+          updatePayload.fecha = existing.fecha;
+          updatePayload.cliente_id = existing.cliente_id;
+          updatePayload.lote_id = existing.lote_id;
+          updatePayload.cantidad = Number(existing.cantidad);
+          updatePayload.metodo_pago = existing.metodo_pago;
+          const precioBase = Number(existing.precio_kg || 0);
+          if (precioBase > 0 && pesoTotal > 0) {
+            const recomputed = roundedVentaTotalAndPrecioKg(pesoTotal, precioBase);
+            updatePayload.precio_kg = Number(Number(precioBase).toFixed(8));
+            updatePayload.total_venta = recomputed.totalVenta;
+            updatePayload.peso_promedio =
+              updatePayload.cantidad > 0 ? pesoTotal / updatePayload.cantidad : 0;
+          }
+        }
         if (onlyLegacyPaid) {
-          updatePayload.monto_cancelado = totalVenta;
+          updatePayload.monto_cancelado = updatePayload.total_venta;
           updatePayload.saldo_pendiente = 0;
           updatePayload.estado_pago = 'pagado';
+        }
+        const paidCheckTotal = updatePayload.total_venta;
+        if (paidCheckTotal + 1e-6 < paid) {
+          return setErrorStatus('El total de la venta no puede ser menor al monto ya cobrado (abonos o pagos registrados).');
         }
         const { error: ventaError } = await updateVenta(editingVentaId, updatePayload);
         if (ventaError) throw new Error(ventaError.message);
@@ -567,7 +608,7 @@ export function usePollosManager(user, rowOwnerId) {
         await readAll();
         resetForm();
         clearEditing();
-        setSuccessStatus('Venta actualizada correctamente');
+        setSuccessStatus(opts.soloPeso ? 'Peso registrado correctamente' : 'Venta actualizada correctamente');
         return;
       }
 

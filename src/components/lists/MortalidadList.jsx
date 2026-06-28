@@ -18,7 +18,7 @@ function MortalidadList({ data, startEditMortalidad, confirmDeleteMortalidad, fi
           <>Registros de bajas por lote (todos los ciclos).</>
         )}
       </p>
-      <div className="table-wrap">
+      <div className="table-wrap table-cards-mobile">
         <table className="data-table">
           <thead>
             <tr>
@@ -37,11 +37,11 @@ function MortalidadList({ data, startEditMortalidad, confirmDeleteMortalidad, fi
             )}
             {data.mortalidad.map((m) => (
               <tr key={m.id}>
-                <td>{m.fecha}</td>
-                <td>{loteLabel(m.lote_id)}</td>
-                <td>{m.cantidad}</td>
-                <td>{m.motivo || '—'}</td>
-                <td className="col-actions">
+                <td data-label="Fecha">{m.fecha}</td>
+                <td data-label="Lote">{loteLabel(m.lote_id)}</td>
+                <td data-label="Cantidad">{m.cantidad}</td>
+                <td data-label="Motivo">{m.motivo || '—'}</td>
+                <td className="col-actions" data-label="Acciones">
                   <div className="row-actions">
                     <button
                       type="button"
