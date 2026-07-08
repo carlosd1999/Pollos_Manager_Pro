@@ -157,9 +157,15 @@ function VentasList({
     return sortVentasPorEstadoPago(rows, data.abonos);
   }, [data.ventas, data.abonos, filtroLoteId, filtroOperacion, filtroPreferencia, clientesMap]);
 
+  const ventasParaPendientes = useMemo(() => {
+    if (!filtroLoteId) return data.ventas;
+    const lid = Number(filtroLoteId);
+    return data.ventas.filter((v) => Number(v.lote_id) === lid);
+  }, [data.ventas, filtroLoteId]);
+
   const pendientesResumen = useMemo(
-    () => resumenPendientesVentas(data.ventas, data.abonos),
-    [data.ventas, data.abonos],
+    () => resumenPendientesVentas(ventasParaPendientes, data.abonos),
+    [ventasParaPendientes, data.abonos],
   );
 
   const resumenVentas = useMemo(() => {
@@ -301,15 +307,18 @@ function VentasList({
     let pollosPesados = 0;
     let kgPesados = 0;
     let totalColonesPesadas = 0;
+    console.log('ventasFiltradas', ventasFiltradas);
     for (const v of ventasFiltradas) {
-      const c = Number(v.cantidad || 0);
-      const kg = Number(v.peso_total || 0);
-      const t = Number(v.total_venta || 0);
-      if (Number.isFinite(c) && c > 0) pollosVendidos += c;
-      if (Number.isFinite(kg) && kg > 0) {
-        kgPesados += kg;
-        if (Number.isFinite(c) && c > 0) pollosPesados += c;
-        if (Number.isFinite(t) && t >= 0) totalColonesPesadas += t;
+      if (v.peso_total > 0) {
+        const c = Number(v.cantidad || 0);
+        const kg = Number(v.peso_total || 0);
+        const t = Number(v.total_venta || 0);
+        if (Number.isFinite(c) && c > 0) pollosVendidos += c;
+        if (Number.isFinite(kg) && kg > 0) {
+          kgPesados += kg;
+          if (Number.isFinite(c) && c > 0) pollosPesados += c;
+          if (Number.isFinite(t) && t >= 0) totalColonesPesadas += t;
+        }
       }
     }
     const pesoPromedioPorPolloKg = pollosPesados > 0 ? kgPesados / pollosPesados : null;
@@ -405,7 +414,13 @@ function VentasList({
         Usa el icono de lista para abrir cobros y registrar abonos. El saldo se actualiza solo.
       </p>
       <div className="ventas-pendientes-panel" aria-live="polite">
-        <h4 className="ventas-pendientes-title">Pendientes operativos</h4>
+        <h4 className="ventas-pendientes-title">
+          Pendientes operativos
+          {filtroLoteId && filtroLoteLabel ? ` — ${filtroLoteLabel}` : ''}
+        </h4>
+        {!filtroLoteId && (
+          <p className="lists-hint ventas-pendientes-scope-hint">Todos los lotes del ciclo en vista.</p>
+        )}
         <ul className="ventas-pendientes-grid">
           <li>
             <span className="ventas-pendientes-label">Sin pesar</span>

@@ -80,13 +80,14 @@ export function resumenPendientesVentas(ventas, abonos) {
     cobroPendiente: 0,
     entregadas: 0,
   };
+  console.log('ventas', ventas.filter(item => item.entregado === false));
   for (const v of ventas || []) {
-    if (ventaEsApartadoSinPesar(v)) r.sinPesar += 1;
+    if (ventaEsApartadoSinPesar(v)) r.sinPesar += Number(v.cantidad || 0);
     if (ventaPendienteEntrega(v)) {
-      r.sinEntregar += 1;
+      r.sinEntregar += Number(v.cantidad || 0);
       r.pollosSinEntregar += Number(v.cantidad || 0);
     } else {
-      r.entregadas += 1;
+      r.entregadas += Number(v.cantidad || 0);
     }
     if (ventaConCobroPendiente(v, abonos)) r.cobroPendiente += 1;
   }

@@ -107,7 +107,7 @@ function GastosList({ data, startEditGasto, confirmDeleteGasto, filtroCicloLabel
           {data.gastos.length > 0 && (
             <tfoot>
               <tr className="gastos-list-total-row">
-                <td colSpan={2} data-label="Total">
+                <td colSpan={3} data-label="Total">
                   <strong>
                     Total
                     {filtroCategoria ? (

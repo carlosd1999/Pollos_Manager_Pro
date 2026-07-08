@@ -747,6 +747,11 @@ table.admin-matrix {
   font-size: 0.95rem;
 }
 
+.ventas-pendientes-scope-hint {
+  margin: 0 0 var(--pm-space-sm);
+  font-size: 0.8rem;
+}
+
 .ventas-pendientes-grid,
 .reportes-pendientes-grid {
   display: grid;

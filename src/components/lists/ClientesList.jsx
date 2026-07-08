@@ -18,10 +18,21 @@ function ClientesList({ data, startEditCliente, confirmDeleteCliente, currentUse
     [data.clientes, filtroTexto, filtroPersona],
   );
 
+  const totalClientes = (data.clientes || []).length;
+  const hayFiltros = Boolean(filtroTexto.trim() || filtroPersona.trim());
+
   return (
     <section className="card list-panel operaciones-lists">
       <h3>Clientes</h3>
-      <p className="lists-hint">Directorio de clientes.</p>
+      <p className="lists-hint clientes-total-hint">
+        <strong>{totalClientes}</strong> cliente{totalClientes === 1 ? '' : 's'} en total
+        {hayFiltros && clientesFiltrados.length !== totalClientes && (
+          <>
+            {' '}
+            · <strong>{clientesFiltrados.length}</strong> con los filtros actuales
+          </>
+        )}
+      </p>
       <div className="ventas-filtros-grid clientes-filtros-grid form-field-stack">
         <div className="form-field-stack">
           <label className="form-field-label" htmlFor="clientes-filtro-texto">
@@ -54,9 +65,9 @@ function ClientesList({ data, startEditCliente, confirmDeleteCliente, currentUse
           </select>
         </div>
       </div>
-      {(filtroTexto.trim() || filtroPersona.trim()) && (
+      {(filtroTexto.trim() || filtroPersona.trim()) && clientesFiltrados.length === 0 && (
         <p className="lists-hint" style={{ marginTop: 0 }}>
-          {clientesFiltrados.length} cliente(s) que coinciden
+          Ningún cliente coincide con los filtros.
         </p>
       )}
       <div className="table-wrap table-cards-mobile">
