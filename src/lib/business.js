@@ -28,6 +28,71 @@ export function ventaEsApartadoSinPesar(venta) {
   return peso <= VENTA_PAGO_EPS && total <= VENTA_PAGO_EPS;
 }
 
+/** Venta/apartado pendiente de marcar como entregado al cliente. */
+export function ventaPendienteEntrega(venta) {
+  return !Boolean(venta?.entregado);
+}
+
+/** Saldo de cobro pendiente de la venta. */
+export function saldoCobroVenta(venta, abonos) {
+  const total = Number(venta?.total_venta || 0);
+  const paid = effectivePaidVenta(venta, abonos);
+  return Math.max(0, total - paid);
+}
+
+export function ventaConCobroPendiente(venta, abonos) {
+  return saldoCobroVenta(venta, abonos) > VENTA_PAGO_EPS;
+}
+
+/**
+ * Prioridad de orden en lista: 0 pendiente, 1 parcial (con abonos), 2 pagado.
+ */
+export function ventaPagoSortRank(venta, abonos) {
+  const total = Number(venta?.total_venta || 0);
+  const paid = effectivePaidVenta(venta, abonos);
+  const saldo = Math.max(0, total - paid);
+  const tieneAbonos = (abonos || []).some((a) => Number(a.venta_id) === Number(venta.id));
+
+  if (total > VENTA_PAGO_EPS && saldo <= VENTA_PAGO_EPS) return 2;
+  if (paid > VENTA_PAGO_EPS && saldo > VENTA_PAGO_EPS) return 1;
+  if (tieneAbonos && saldo > VENTA_PAGO_EPS) return 1;
+  return 0;
+}
+
+export function compareVentasPorEstadoPago(a, b, abonos) {
+  const diff = ventaPagoSortRank(a, abonos) - ventaPagoSortRank(b, abonos);
+  if (diff !== 0) return diff;
+  const byFecha = String(b.fecha || '').localeCompare(String(a.fecha || ''));
+  if (byFecha !== 0) return byFecha;
+  return Number(b.id || 0) - Number(a.id || 0);
+}
+
+export function sortVentasPorEstadoPago(ventas, abonos) {
+  return [...(ventas || [])].sort((a, b) => compareVentasPorEstadoPago(a, b, abonos));
+}
+
+/** Conteos operativos para dashboard y panel de ventas. */
+export function resumenPendientesVentas(ventas, abonos) {
+  const r = {
+    sinPesar: 0,
+    sinEntregar: 0,
+    pollosSinEntregar: 0,
+    cobroPendiente: 0,
+    entregadas: 0,
+  };
+  for (const v of ventas || []) {
+    if (ventaEsApartadoSinPesar(v)) r.sinPesar += 1;
+    if (ventaPendienteEntrega(v)) {
+      r.sinEntregar += 1;
+      r.pollosSinEntregar += Number(v.cantidad || 0);
+    } else {
+      r.entregadas += 1;
+    }
+    if (ventaConCobroPendiente(v, abonos)) r.cobroPendiente += 1;
+  }
+  return r;
+}
+
 /** Abonos más recientes primero (fecha, luego id). */
 export function sortAbonosNewestFirst(rows) {
   return [...(rows || [])].sort((a, b) => {

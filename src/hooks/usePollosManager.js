@@ -14,12 +14,18 @@ import {
   nextCicloNumero,
   nextLoteNumber,
   pollosComprometidosPorLote,
+  resumenPendientesVentas,
   sortLotesOldestFirst,
   VENTA_PAGO_EPS,
 } from '../lib/business';
+import {
+  buildClienteNombreConPersona,
+  parseClienteNombreConPersona,
+} from '../constants/ventaClientePersonas';
 import { parseDecimalNumber } from '../lib/parseDecimalInput';
 import { scrollModuleFormIntoView } from '../lib/scrollUi';
 import { supabase } from '../lib/supabase';
+import { friendlySupabaseError } from '../lib/supabaseErrors';
 import {
   closeCiclo,
   createAbono,
@@ -273,6 +279,11 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
     data.ventas,
     data.mortalidad,
   ]);
+
+  const ventasPendientesResumen = useMemo(
+    () => resumenPendientesVentas(dataVista.ventas, dataVista.abonos),
+    [dataVista.ventas, dataVista.abonos],
+  );
 
   const statsVista = useMemo(() => {
     if (!vistaCicloId) return stats;
@@ -726,9 +737,10 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
     }
     try {
       setFieldErrors({});
+      const nombreGuardado = buildClienteNombreConPersona(form.cliente.nombre, form.cliente.persona);
       if (editingClienteId) {
         const { error } = await updateCliente(editingClienteId, {
-          nombre: form.cliente.nombre.trim(),
+          nombre: nombreGuardado,
           telefono: form.cliente.telefono.trim(),
           direccion: form.cliente.direccion.trim(),
           preferencia_pollo: form.cliente.preferencia_pollo?.trim() || null,
@@ -742,7 +754,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
       }
       const { error } = await createCliente({
         user_id: rowOwnerId,
-        nombre: form.cliente.nombre.trim(),
+        nombre: nombreGuardado,
         telefono: form.cliente.telefono.trim(),
         direccion: form.cliente.direccion.trim(),
         preferencia_pollo: form.cliente.preferencia_pollo?.trim() || null,
@@ -752,7 +764,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
       resetForm();
       setSuccessStatus('Cliente registrado correctamente');
     } catch (error) {
-      setErrorStatus(`No se pudo guardar el cliente: ${error.message}`);
+      setErrorStatus(`No se pudo guardar el cliente: ${friendlySupabaseError(error.message)}`);
     }
   };
 
@@ -818,10 +830,12 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
   };
 
   const startEditCliente = (c) => {
+    const { nombreBase, persona } = parseClienteNombreConPersona(c.nombre);
     setForm({
       ...createInitialForm(),
       cliente: {
-        nombre: c.nombre || '',
+        nombre: nombreBase,
+        persona,
         telefono: c.telefono || '',
         direccion: c.direccion || '',
         preferencia_pollo: c.preferencia_pollo || '',
@@ -842,7 +856,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
       await readAll();
       setSuccessStatus(entregado ? 'Venta marcada como entregada' : 'Entrega desmarcada');
     } catch (error) {
-      setErrorStatus(`No se pudo actualizar la entrega: ${error.message}`);
+      setErrorStatus(`No se pudo actualizar la entrega: ${friendlySupabaseError(error.message)}`);
     }
   };
 
@@ -1110,6 +1124,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
 
   const exportPDF = () => {
     const s = vistaCicloId ? statsVista : stats;
+    const pend = ventasPendientesResumen;
     const doc = new jsPDF();
     doc.setFontSize(14);
     doc.text(
@@ -1121,6 +1136,10 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
     doc.text(`Ganancia total: ${formatColones(s.totalUtilidad)}`, 10, 20);
     doc.text(`Mortalidad general: ${s.mortalidadGeneral.toFixed(2)}%`, 10, 27);
     doc.text(`Total pollos comprados: ${s.totalComprados}`, 10, 34);
+    doc.text(`Ventas sin pesar: ${pend.sinPesar}`, 10, 41);
+    doc.text(`Ventas sin entregar: ${pend.sinEntregar} (${pend.pollosSinEntregar} pollos)`, 10, 48);
+    doc.text(`Ventas con cobro pendiente: ${pend.cobroPendiente}`, 10, 55);
+    doc.text(`Ventas entregadas: ${pend.entregadas}`, 10, 62);
     doc.save(`pollos-reporte-${dayjs().format('YYYYMMDD-HHmm')}.pdf`);
   };
 
@@ -1144,6 +1163,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
     inputClass,
     stats,
     statsVista,
+    ventasPendientesResumen,
     lotesWithAvailability,
     lotesWithAvailabilityOperaciones,
     dataVista,

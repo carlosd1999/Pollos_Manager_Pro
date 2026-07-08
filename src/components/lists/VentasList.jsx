@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
-import { effectivePaidVenta, sortLotesOldestFirst, VENTA_PAGO_EPS } from '../../lib/business';
+import { effectivePaidVenta, resumenPendientesVentas, sortLotesOldestFirst, sortVentasPorEstadoPago, ventaConCobroPendiente, ventaEsApartadoSinPesar, ventaPendienteEntrega, VENTA_PAGO_EPS } from '../../lib/business';
 import { formatColones } from '../../lib/formatCurrency';
 import { parseDecimalNumber } from '../../lib/parseDecimalInput';
 import {
@@ -13,6 +13,7 @@ import {
 } from '../../lib/repartoLote';
 import {
   clasificarTamanoPolloPorKg,
+  CLIENTE_POLLO_PREFERENCIA_OPTIONS,
   labelPreferenciaPolloCorto,
   pesoPromedioPorPolloVenta,
 } from '../../constants/clientePolloPreferencia';
@@ -40,6 +41,16 @@ const ESTADO_LABEL = {
   parcial: 'Parcial',
   pagado: 'Pagado',
 };
+
+const FILTRO_OPERACION_OPTIONS = [
+  { value: '', label: 'Todas las operaciones' },
+  { value: 'sin_pesar', label: 'Sin pesar (apartados)' },
+  { value: 'sin_entregar', label: 'Sin entregar' },
+  { value: 'entregado', label: 'Entregados' },
+  { value: 'cobro_pendiente', label: 'Cobro pendiente' },
+];
+
+const VENTAS_TABLE_COLS = 13;
 
 function emptyAbono() {
   return { fecha: dayjs().format('YYYY-MM-DD'), monto: '', metodo_pago: '', observaciones: '' };
@@ -79,6 +90,8 @@ function VentasList({
   const [filtroLoteId, setFiltroLoteId] = useState('');
   /** Si el usuario cambia el desplegable, deja de sobrescribir con el lote por defecto. */
   const [filtroLoteManual, setFiltroLoteManual] = useState(false);
+  const [filtroOperacion, setFiltroOperacion] = useState('');
+  const [filtroPreferencia, setFiltroPreferencia] = useState('');
   const [simGastos, setSimGastos] = useState('');
 
   const clienteNombre = (id) => data.clientes.find((c) => c.id === id)?.nombre || id;
@@ -124,10 +137,30 @@ function VentasList({
   }, [lotesOrdenados]);
 
   const ventasFiltradas = useMemo(() => {
-    if (!filtroLoteId) return data.ventas;
-    const lid = Number(filtroLoteId);
-    return data.ventas.filter((v) => Number(v.lote_id) === lid);
-  }, [data.ventas, filtroLoteId]);
+    let rows = data.ventas;
+    if (filtroLoteId) {
+      const lid = Number(filtroLoteId);
+      rows = rows.filter((v) => Number(v.lote_id) === lid);
+    }
+    if (filtroOperacion === 'sin_pesar') {
+      rows = rows.filter(ventaEsApartadoSinPesar);
+    } else if (filtroOperacion === 'sin_entregar') {
+      rows = rows.filter(ventaPendienteEntrega);
+    } else if (filtroOperacion === 'entregado') {
+      rows = rows.filter((v) => !ventaPendienteEntrega(v));
+    } else if (filtroOperacion === 'cobro_pendiente') {
+      rows = rows.filter((v) => ventaConCobroPendiente(v, data.abonos));
+    }
+    if (filtroPreferencia) {
+      rows = rows.filter((v) => clientesMap[v.cliente_id]?.preferencia_pollo === filtroPreferencia);
+    }
+    return sortVentasPorEstadoPago(rows, data.abonos);
+  }, [data.ventas, data.abonos, filtroLoteId, filtroOperacion, filtroPreferencia, clientesMap]);
+
+  const pendientesResumen = useMemo(
+    () => resumenPendientesVentas(data.ventas, data.abonos),
+    [data.ventas, data.abonos],
+  );
 
   const resumenVentas = useMemo(() => {
     const PENDIENTE_KEY = '__pendiente__';
@@ -371,39 +404,102 @@ function VentasList({
         <br />
         Usa el icono de lista para abrir cobros y registrar abonos. El saldo se actualiza solo.
       </p>
-      <div className="ventas-list-toolbar form-field-stack">
-        <label className="form-field-label" htmlFor="ventas-filtro-lote">
-          Filtrar por lote
-        </label>
-        <select
-          id="ventas-filtro-lote"
-          value={filtroLoteId}
-          onChange={(e) => {
-            setFiltroLoteManual(true);
-            setFiltroLoteId(e.target.value);
-          }}
-        >
-          <option value="">Todos los lotes</option>
-          {lotesOrdenados.map((l) => (
-            <option key={l.id} value={String(l.id)}>
-              Lote {l.numero_lote} — disponibles {l.disponibles}
-            </option>
-          ))}
-        </select>
+      <div className="ventas-pendientes-panel" aria-live="polite">
+        <h4 className="ventas-pendientes-title">Pendientes operativos</h4>
+        <ul className="ventas-pendientes-grid">
+          <li>
+            <span className="ventas-pendientes-label">Sin pesar</span>
+            <strong>{pendientesResumen.sinPesar}</strong>
+          </li>
+          <li>
+            <span className="ventas-pendientes-label">Sin entregar</span>
+            <strong>
+              {pendientesResumen.sinEntregar}
+              {pendientesResumen.pollosSinEntregar > 0 && (
+                <span className="ventas-pendientes-sub"> ({pendientesResumen.pollosSinEntregar} pollos)</span>
+              )}
+            </strong>
+          </li>
+          <li>
+            <span className="ventas-pendientes-label">Cobro pendiente</span>
+            <strong>{pendientesResumen.cobroPendiente}</strong>
+          </li>
+          <li>
+            <span className="ventas-pendientes-label">Entregados</span>
+            <strong>{pendientesResumen.entregadas}</strong>
+          </li>
+        </ul>
+      </div>
+      <div className="ventas-filtros-grid form-field-stack">
+        <div className="form-field-stack">
+          <label className="form-field-label" htmlFor="ventas-filtro-lote">
+            Lote
+          </label>
+          <select
+            id="ventas-filtro-lote"
+            value={filtroLoteId}
+            onChange={(e) => {
+              setFiltroLoteManual(true);
+              setFiltroLoteId(e.target.value);
+            }}
+          >
+            <option value="">Todos los lotes</option>
+            {lotesOrdenados.map((l) => (
+              <option key={l.id} value={String(l.id)}>
+                Lote {l.numero_lote} — disponibles {l.disponibles}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-field-stack">
+          <label className="form-field-label" htmlFor="ventas-filtro-operacion">
+            Estado operativo
+          </label>
+          <select
+            id="ventas-filtro-operacion"
+            value={filtroOperacion}
+            onChange={(e) => setFiltroOperacion(e.target.value)}
+          >
+            {FILTRO_OPERACION_OPTIONS.map((o) => (
+              <option key={o.value || 'all'} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-field-stack">
+          <label className="form-field-label" htmlFor="ventas-filtro-preferencia">
+            Preferencia pollo
+          </label>
+          <select
+            id="ventas-filtro-preferencia"
+            value={filtroPreferencia}
+            onChange={(e) => setFiltroPreferencia(e.target.value)}
+          >
+            <option value="">Todas</option>
+            {CLIENTE_POLLO_PREFERENCIA_OPTIONS.filter((o) => o.value).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       <div className="table-wrap ventas-table-wrap table-cards-mobile">
         <table className="data-table ventas-main-table">
           <thead>
             <tr>
+              <th>Fecha</th>
               <th>Cliente</th>
-              <th>Pref. Peso</th>
+              <th>Lote</th>
+              <th className="ventas-col-secondary">Pref. Peso</th>
               <th>Cant.</th>
               <th>Peso</th>
               <th>Total</th>
               <th>Cobrado</th>
               <th>Saldo</th>
-              <th>Estado</th>
-              <th>Pago</th>
+              <th className="ventas-col-secondary">Estado</th>
+              <th className="ventas-col-secondary">Pago</th>
               <th className="ventas-col-entregado">Entregado</th>
               <th className="col-actions" title="Acciones sobre la venta">
                 Acciones
@@ -413,12 +509,12 @@ function VentasList({
           <tbody>
             {data.ventas.length === 0 && (
               <tr>
-                <td colSpan={12}>Sin ventas aún.</td>
+                <td colSpan={VENTAS_TABLE_COLS}>Sin ventas aún.</td>
               </tr>
             )}
             {data.ventas.length > 0 && ventasFiltradas.length === 0 && (
               <tr>
-                <td colSpan={12}>Ninguna venta en el lote seleccionado.</td>
+                <td colSpan={VENTAS_TABLE_COLS}>Ninguna venta coincide con los filtros.</td>
               </tr>
             )}
             {ventasFiltradas.map((v) => {
@@ -433,8 +529,10 @@ function VentasList({
               return (
                 <Fragment key={v.id}>
                   <tr className={['venta-row', entregado ? 'venta-row--entregada' : ''].filter(Boolean).join(' ')}>
+                    <td data-label="Fecha">{v.fecha || '—'}</td>
                     <td data-label="Cliente">{clienteNombre(v.cliente_id)}</td>
-                    <td data-label="Pref. Peso">
+                    <td data-label="Lote">{loteLabel(v.lote_id)}</td>
+                    <td className="ventas-col-secondary" data-label="Pref. Peso">
                       {pref ? (
                         <span className={`preferencia-pollo-tag preferencia-pollo-tag--${pref}`}>
                           {labelPreferenciaPolloCorto(pref)}
@@ -459,8 +557,8 @@ function VentasList({
                     <td data-label="Total">{formatColones(v.total_venta)}</td>
                     <td data-label="Cobrado">{formatColones(paid)}</td>
                     <td data-label="Saldo">{formatColones(saldo)}</td>
-                    <td data-label="Estado">{ESTADO_LABEL[v.estado_pago] || v.estado_pago}</td>
-                    <td data-label="Pago">{labelMetodoPago(v.metodo_pago)}</td>
+                    <td className="ventas-col-secondary" data-label="Estado">{ESTADO_LABEL[v.estado_pago] || v.estado_pago}</td>
+                    <td className="ventas-col-secondary" data-label="Pago">{labelMetodoPago(v.metodo_pago)}</td>
                     <td className="ventas-col-entregado" data-label="Entregado">
                       <button
                         type="button"
@@ -493,21 +591,23 @@ function VentasList({
                         >
                           <IconEditar />
                         </button>
-                        <button
-                          type="button"
-                          className="danger-btn btn-icon"
-                          onClick={() => confirmDeleteVenta(v.id)}
-                          aria-label="Eliminar venta"
-                          title="Eliminar venta"
-                        >
-                          <IconEliminar />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            className="danger-btn btn-icon"
+                            onClick={() => confirmDeleteVenta(v.id)}
+                            aria-label="Eliminar venta"
+                            title="Eliminar venta"
+                          >
+                            <IconEliminar />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
                   {expandedId === v.id && (
                     <tr className="abonos-row">
-                      <td colSpan={12}>
+                      <td colSpan={VENTAS_TABLE_COLS}>
                         <div className="abonos-panel">
                           <p className="lists-hint" style={{ marginTop: 0 }}>
                             Pollos disponibles en este lote (referencia):{' '}

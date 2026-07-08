@@ -213,6 +213,7 @@ function App() {
     setVistaCicloId,
     vistaCicloLabel,
     statsVista,
+    ventasPendientesResumen,
     gastoPorCategoriaVista,
     utilidadPorCicloVista,
     formResetGeneration,
@@ -349,6 +350,7 @@ function App() {
           utilidadPorCiclo={vistaCicloId ? utilidadPorCicloVista : utilidadPorCiclo}
           gastoPorCategoria={vistaCicloId ? gastoPorCategoriaVista : gastoPorCategoria}
           filtroCicloLabel={vistaCicloLabel}
+          ventasPendientesResumen={ventasPendientesResumen}
         />
       )}
 
@@ -378,7 +380,13 @@ function App() {
 
       {tab === 'mortalidad' && <MortalidadModule {...moduleProps} handleMortalidad={handleMortalidad} />}
 
-      {tab === 'clientes' && <ClientesModule {...moduleProps} handleCliente={handleCliente} />}
+      {tab === 'clientes' && (
+        <ClientesModule
+          {...moduleProps}
+          handleCliente={handleCliente}
+          currentUserFullName={session?.user?.user_metadata?.full_name || ''}
+        />
+      )}
 
       {tab === 'ciclos' && (
         <CiclosModule
@@ -394,6 +402,7 @@ function App() {
           data={vistaCicloId ? dataVista : data}
           exportPDF={exportPDF}
           exportExcel={exportExcel}
+          ventasPendientesResumen={ventasPendientesResumen}
         />
       )}
 

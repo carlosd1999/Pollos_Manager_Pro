@@ -15,6 +15,7 @@ export default function ClientesModule(props) {
     data,
     startEditCliente,
     confirmDeleteCliente,
+    currentUserFullName,
   } = props;
 
   return (
@@ -32,7 +33,12 @@ export default function ClientesModule(props) {
         />
       </div>
       <div className="module-table">
-        <ClientesList data={data} startEditCliente={startEditCliente} confirmDeleteCliente={confirmDeleteCliente} />
+        <ClientesList
+          data={data}
+          startEditCliente={startEditCliente}
+          confirmDeleteCliente={confirmDeleteCliente}
+          currentUserFullName={currentUserFullName}
+        />
       </div>
     </section>
   );

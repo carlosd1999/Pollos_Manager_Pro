@@ -400,6 +400,43 @@ select:focus:not(:focus-visible) {
   margin-bottom: 8px;
 }
 
+.venta-cliente-picker {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--pm-border);
+  border-radius: var(--pm-radius-sm);
+  overflow: hidden;
+  background: var(--pm-input-bg, var(--pm-surface));
+}
+
+.venta-cliente-picker--error {
+  border-color: var(--pm-danger);
+}
+
+.venta-cliente-picker .venta-cliente-filter,
+.venta-cliente-picker select {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.venta-cliente-picker .venta-cliente-filter {
+  border-bottom: 1px solid var(--pm-border);
+  padding: 10px 12px;
+  font-size: 0.9rem;
+}
+
+.venta-cliente-picker select {
+  padding: 10px 12px;
+  min-height: 2.75rem;
+}
+
+.venta-cliente-picker select.field-error-border {
+  outline: none;
+}
+
 .form-field-stack .field-error {
   margin: 6px 0 0;
 }
@@ -695,6 +732,71 @@ table.admin-matrix {
 .ventas-col-entregado {
   text-align: center;
   vertical-align: middle;
+}
+
+.ventas-pendientes-panel {
+  margin: var(--pm-space-md) 0;
+  padding: var(--pm-space-md);
+  background: var(--pm-surface-muted);
+  border: 1px solid var(--pm-border);
+  border-radius: var(--pm-radius-md);
+}
+
+.ventas-pendientes-title {
+  margin: 0 0 var(--pm-space-sm);
+  font-size: 0.95rem;
+}
+
+.ventas-pendientes-grid,
+.reportes-pendientes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--pm-space-sm) var(--pm-space-md);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ventas-pendientes-grid li,
+.reportes-pendientes-grid li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ventas-pendientes-label {
+  font-size: 0.8rem;
+  color: var(--pm-text-muted);
+}
+
+.ventas-pendientes-sub {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--pm-text-muted);
+}
+
+.ventas-filtros-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--pm-space-md);
+  margin-bottom: var(--pm-space-md);
+}
+
+.kpi--alert strong {
+  color: var(--pm-warning, #b45309);
+}
+
+.kpi-sub {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--pm-text-muted);
+}
+
+@media (max-width: 640px) {
+  .ventas-main-table .ventas-col-secondary {
+    display: none;
+  }
 }
 
 .venta-cliente-pref-hint {

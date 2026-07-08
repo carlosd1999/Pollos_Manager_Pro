@@ -12,6 +12,7 @@ import {
   VENTA_FILTRO_PERSONA_OPCIONES,
   defaultRegistrarVentaTabFromFullName,
   defaultVentaClientePersonaFromFullName,
+  filtrarClientes,
 } from '../../constants/ventaClientePersonas';
 
 function mergeVentaConRedondeo(prevForm, patch) {
@@ -71,6 +72,7 @@ function VentaForm({
   const [personaClienteFiltro, setPersonaClienteFiltro] = useState(() =>
     defaultVentaClientePersonaFromFullName(currentUserFullName),
   );
+  const [textoClienteFiltro, setTextoClienteFiltro] = useState('');
   const [registrarTab, setRegistrarTab] = useState(() =>
     defaultRegistrarVentaTabFromFullName(currentUserFullName, isAdmin),
   );
@@ -99,17 +101,17 @@ function VentaForm({
   useEffect(() => {
     if (editingVentaId) {
       setPersonaClienteFiltro('');
+      setTextoClienteFiltro('');
       return;
     }
     setPersonaClienteFiltro(defaultVentaClientePersonaFromFullName(currentUserFullName));
+    setTextoClienteFiltro('');
   }, [formResetGeneration, editingVentaId, currentUserFullName]);
 
-  const clientesFiltrados = useMemo(() => {
-    const all = data.clientes || [];
-    const q = personaClienteFiltro.trim().toLowerCase();
-    if (!q) return all;
-    return all.filter((c) => (c.nombre || '').toLowerCase().includes(q));
-  }, [data.clientes, personaClienteFiltro]);
+  const clientesFiltrados = useMemo(
+    () => filtrarClientes(data.clientes, { texto: textoClienteFiltro, persona: personaClienteFiltro }),
+    [data.clientes, textoClienteFiltro, personaClienteFiltro],
+  );
 
   const clientesParaSelect = useMemo(() => {
     const selId = form.venta.cliente_id != null && form.venta.cliente_id !== '' ? String(form.venta.cliente_id) : '';
@@ -173,7 +175,7 @@ function VentaForm({
     <div className="form-field-stack venta-cliente-field-group">
       <p className="form-field-label form-field-label--section">Cliente</p>
       <label className="form-field-label form-field-label--nested" htmlFor="venta-cliente-persona-filtro">
-        Filtrar por persona
+        Cliente de
       </label>
       <select
         id="venta-cliente-persona-filtro"
@@ -182,41 +184,62 @@ function VentaForm({
         aria-label="Filtrar clientes por persona"
         onChange={(e) => setPersonaClienteFiltro(e.target.value)}
       >
-        <option value="">Todos los clientes</option>
+        <option value="">Todas las personas</option>
         {VENTA_FILTRO_PERSONA_OPCIONES.map((p) => (
           <option key={p} value={p}>
             {p}
           </option>
         ))}
       </select>
-      <label className="form-field-label form-field-label--nested" htmlFor="venta-cliente">
+      <label className="form-field-label form-field-label--nested" htmlFor="venta-cliente-texto-filtro">
         Elegir cliente
       </label>
-      <select
-        id="venta-cliente"
-        className={inputClass('venta.cliente_id')}
-        value={form.venta.cliente_id}
-        onChange={(e) => {
-          setForm({ ...form, venta: { ...form.venta, cliente_id: e.target.value } });
-          setFieldErrors((prev) => ({ ...prev, 'venta.cliente_id': '' }));
-        }}
+      <div
+        className={[
+          'venta-cliente-picker',
+          fieldErrors['venta.cliente_id'] ? 'venta-cliente-picker--error' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
       >
-        <option value="">Seleccionar…</option>
-        {clientesParaSelect.map((cliente) => (
-          <option key={cliente.id} value={cliente.id}>
-            {cliente.nombre}
-            {cliente.preferencia_pollo
-              ? ` · ${labelPreferenciaPolloCorto(cliente.preferencia_pollo)}`
-              : ''}
-          </option>
-        ))}
-      </select>
-      {personaClienteFiltro.trim() && (
+        <input
+          id="venta-cliente-texto-filtro"
+          type="search"
+          className="venta-cliente-filter"
+          autoComplete="off"
+          placeholder="Buscar por nombre…"
+          value={textoClienteFiltro}
+          onChange={(e) => setTextoClienteFiltro(e.target.value)}
+          aria-label="Buscar cliente por nombre"
+        />
+        <select
+          id="venta-cliente"
+          className={inputClass('venta.cliente_id')}
+          value={form.venta.cliente_id}
+          aria-label="Elegir cliente"
+          onChange={(e) => {
+            setForm({ ...form, venta: { ...form.venta, cliente_id: e.target.value } });
+            setFieldErrors((prev) => ({ ...prev, 'venta.cliente_id': '' }));
+            if (e.target.value) setTextoClienteFiltro('');
+          }}
+        >
+          <option value="">Seleccionar…</option>
+          {clientesParaSelect.map((cliente) => (
+            <option key={cliente.id} value={cliente.id}>
+              {cliente.nombre}
+              {cliente.preferencia_pollo
+                ? ` · ${labelPreferenciaPolloCorto(cliente.preferencia_pollo)}`
+                : ''}
+            </option>
+          ))}
+        </select>
+      </div>
+      {(personaClienteFiltro.trim() || textoClienteFiltro.trim()) && (
         <p className="lists-hint" style={{ marginTop: 4 }}>
           {clientesFiltrados.length === 0
             ? form.venta.cliente_id
-              ? 'Sin coincidencias con el filtro; el cliente ya elegido sigue en la lista.'
-              : 'Sin coincidencias con el filtro.'
+              ? 'Sin coincidencias con los filtros; el cliente ya elegido sigue en la lista.'
+              : 'Sin coincidencias con los filtros.'
             : `${clientesFiltrados.length} cliente(s) que coinciden`}
         </p>
       )}

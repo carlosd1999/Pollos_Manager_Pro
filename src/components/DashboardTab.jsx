@@ -13,7 +13,15 @@ import {
 } from 'recharts';
 import { formatColones } from '../lib/formatCurrency';
 
-function DashboardTab({ stats, utilidadPorCiclo, gastoPorCategoria, filtroCicloLabel }) {
+function DashboardTab({ stats, utilidadPorCiclo, gastoPorCategoria, filtroCicloLabel, ventasPendientesResumen }) {
+  const pend = ventasPendientesResumen || {
+    sinPesar: 0,
+    sinEntregar: 0,
+    pollosSinEntregar: 0,
+    cobroPendiente: 0,
+    entregadas: 0,
+  };
+
   return (
     <section className="dashboard-grid">
       {filtroCicloLabel && (
@@ -36,6 +44,23 @@ function DashboardTab({ stats, utilidadPorCiclo, gastoPorCategoria, filtroCicloL
         </strong>
       </article>
       <article className="card kpi"><h3>Mortalidad general</h3><strong>{stats.mortalidadGeneral.toFixed(2)}%</strong></article>
+      <article className="card kpi kpi--alert">
+        <h3>Sin pesar</h3>
+        <strong>{pend.sinPesar}</strong>
+      </article>
+      <article className="card kpi kpi--alert">
+        <h3>Sin entregar</h3>
+        <strong>
+          {pend.sinEntregar}
+          {pend.pollosSinEntregar > 0 && (
+            <span className="kpi-sub"> ({pend.pollosSinEntregar} pollos)</span>
+          )}
+        </strong>
+      </article>
+      <article className="card kpi kpi--alert">
+        <h3>Cobro pendiente</h3>
+        <strong>{pend.cobroPendiente}</strong>
+      </article>
       <article className="card chart">
         <h3>Ganancia por ciclo</h3>
         <ResponsiveContainer width="100%" height={220}>

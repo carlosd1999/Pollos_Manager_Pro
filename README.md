@@ -1,68 +1,82 @@
-# Gestión Avícola
+# Gestión Avícola (Pollos Manager Pro)
 
-Web app responsive (mobile first) para administrar ciclos productivos, lotes, mortalidad, gastos, ventas y analitica historica para negocio avicola.
+Web app responsive (mobile first) para administrar ciclos productivos, lotes, mortalidad, gastos, ventas, clientes y analítica histórica para negocio avícola.
 
 ## Stack
 
 - React + Vite
-- Supabase (DB relacional, Auth y Realtime)
-- Recharts (dashboard visual)
+- Supabase (PostgreSQL, Auth, RLS)
+- Recharts (dashboard)
 - jsPDF + xlsx (exportaciones)
-- PWA basica con manifest + service worker
+- PWA con manifest + service worker
 
-## Iconos PWA (pantalla de inicio / iOS)
+## Configuración inicial
 
-Los PNG en `public/` (`pwa-192.png`, `pwa-512.png`, `pwa-512-maskable.png`, `apple-touch-icon.png`) se generan desde `public/favicon.svg`. Si cambias el logo, vuelve a generarlos:
-
-```bash
-npm run generate:pwa-icons
-```
-
-## Configuracion
-
-1. Instala dependencias:
+1. Instalar dependencias:
 
 ```bash
 npm install
 ```
 
-2. Crea tu archivo `.env`:
+2. Crear `.env` desde el ejemplo:
 
 ```bash
 cp .env.example .env
 ```
 
-3. Completa tus credenciales de Supabase.
+3. Completar `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY`.
 
-4. Ejecuta el SQL de `supabase-schema.sql` en el SQL Editor de Supabase.
+4. Ejecutar las migraciones SQL en Supabase (ver `docs/MIGRACIONES.md`).
 
-5. Ejecuta tambien `supabase-auth-rls.sql` para seguridad por usuario (Auth + RLS).
-
-6. Levanta el proyecto:
+5. Levantar el proyecto:
 
 ```bash
 npm run dev
 ```
 
-## Automatizacion implementada
+## Autenticación y permisos
 
-- Al registrar un gasto con categoria `Compra de Pollos`:
-  - Si no hay ciclo activo, crea un ciclo y lote 1.
-  - Si el ciclo activo tiene menos de 6 lotes, crea el siguiente lote.
-  - Si el ciclo activo llega a 6 lotes, lo cierra y crea un nuevo ciclo con lote 1.
-- Validacion de ventas para no vender mas pollos de los disponibles por lote.
-- Mortalidad impacta disponibilidad de lote y metricas de rentabilidad.
+- Login con Supabase Auth (email/contraseña).
+- Cada usuario tiene su dataset o acceso como invitado al negocio del owner.
+- RLS restringe lectura/escritura por `user_id` y reglas de invitados.
+- Módulo **Admin**: invitar usuarios y habilitar pestañas por persona.
+- Rol **admin**: venta al contado, eliminar ventas, reparto entre socias.
+- Usuarios no admin: apartados, editar peso y registrar abonos.
 
-## Modulos incluidos
+## Módulos
 
-- Dashboard: KPIs, ganancia por ciclo, gastos por categoria, distribucion gastos.
-- Operaciones: registrar gastos, ventas y mortalidad.
-- Reportes: exportacion PDF y Excel.
-- Vista responsive: bottom nav en movil y pestañas en escritorio.
+| Módulo | Descripción |
+|--------|-------------|
+| Dashboard | KPIs financieros, mortalidad y pendientes operativos (sin pesar, sin entregar, cobro pendiente) |
+| Ventas | Apartados/ventas, abonos, preferencia de pollo, marcar entregado, filtros y reparto por lote |
+| Gastos | Gastos por ciclo; compra de pollos crea/actualiza lotes automáticamente |
+| Mortalidad | Registro por lote |
+| Clientes | Datos de contacto y preferencia de tamaño de pollo |
+| Ciclos | Abrir/cerrar ciclos y ver disponibilidad por lote |
+| Reportes | Export PDF/Excel con métricas de pendientes |
 
-## Siguientes mejoras recomendadas
+## Migraciones SQL
 
-- Politicas RLS por usuario autenticado.
-- Login completo con Supabase Auth.
-- Modulo de filtros inteligentes (30 dias, 3 meses, anual, cliente, categoria).
-- Tablas historicas avanzadas y ranking top 10 ciclos.
+El orden completo está en [`docs/MIGRACIONES.md`](docs/MIGRACIONES.md).
+
+Para funciones recientes (preferencia de pollo, entregado):
+
+```bash
+# Ejecutar en SQL Editor de Supabase
+supabase-cliente-preferencia-venta-entregado.sql
+```
+
+## Iconos PWA
+
+```bash
+npm run generate:pwa-icons
+```
+
+Genera los PNG en `public/` desde `public/favicon.svg`.
+
+## Automatización de negocio
+
+- Gasto **Compra de Pollos**: crea ciclo/lote según reglas (máx. 6 lotes por ciclo).
+- Validación de stock: no se venden más pollos que los disponibles en el lote.
+- Mortalidad reduce disponibilidad y afecta rentabilidad.
+- Edición de compra de pollos actualiza cantidad, precio y fecha del lote vinculado.

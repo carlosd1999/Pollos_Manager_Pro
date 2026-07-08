@@ -1,7 +1,10 @@
 import {
   CLIENTE_POLLO_PREFERENCIA_OPTIONS,
-  labelPreferenciaPollo,
 } from '../../constants/clientePolloPreferencia';
+import {
+  VENTA_FILTRO_PERSONA_OPCIONES,
+  buildClienteNombreConPersona,
+} from '../../constants/ventaClientePersonas';
 
 function ClienteForm({
   form,
@@ -14,6 +17,8 @@ function ClienteForm({
   onCancelEdit,
 }) {
   const isEditing = Boolean(editingClienteId);
+  const nombrePreview = buildClienteNombreConPersona(form.cliente.nombre, form.cliente.persona);
+
   return (
     <article className="card">
       <h3>{isEditing ? 'Editar cliente' : 'Registrar cliente'}</h3>
@@ -32,6 +37,35 @@ function ClienteForm({
           }}
         />
         {fieldErrors['cliente.nombre'] && <p className="field-error">{fieldErrors['cliente.nombre']}</p>}
+      </div>
+      <div className="form-field-stack">
+        <label className="form-field-label" htmlFor="cliente-persona">
+          Cliente de (opcional)
+        </label>
+        <select
+          id="cliente-persona"
+          className="venta-cliente-persona-filter"
+          value={form.cliente.persona ?? ''}
+          onChange={(e) => {
+            setForm({ ...form, cliente: { ...form.cliente, persona: e.target.value } });
+          }}
+        >
+          <option value="">Sin asignar</option>
+          {VENTA_FILTRO_PERSONA_OPCIONES.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
+        <p className="lists-hint" style={{ marginTop: 4 }}>
+          {nombrePreview && form.cliente.persona
+            ? (
+              <>
+                Se guardará como: <strong>{nombrePreview}</strong>
+              </>
+            )
+            : 'Si eliges una persona, el nombre se guarda con paréntesis para identificar a quién pertenece el cliente.'}
+        </p>
       </div>
       <div className="form-field-stack">
         <label className="form-field-label" htmlFor="cliente-telefono">

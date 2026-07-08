@@ -1,11 +1,64 @@
+import { useMemo, useState } from 'react';
 import { labelPreferenciaPolloCorto } from '../../constants/clientePolloPreferencia';
+import {
+  VENTA_FILTRO_PERSONA_OPCIONES,
+  defaultVentaClientePersonaFromFullName,
+  filtrarClientes,
+} from '../../constants/ventaClientePersonas';
 import { IconEditar, IconEliminar } from '../icons/RowActionIcons';
 
-function ClientesList({ data, startEditCliente, confirmDeleteCliente }) {
+function ClientesList({ data, startEditCliente, confirmDeleteCliente, currentUserFullName = '' }) {
+  const [filtroTexto, setFiltroTexto] = useState('');
+  const [filtroPersona, setFiltroPersona] = useState(() =>
+    defaultVentaClientePersonaFromFullName(currentUserFullName),
+  );
+
+  const clientesFiltrados = useMemo(
+    () => filtrarClientes(data.clientes, { texto: filtroTexto, persona: filtroPersona }),
+    [data.clientes, filtroTexto, filtroPersona],
+  );
+
   return (
     <section className="card list-panel operaciones-lists">
       <h3>Clientes</h3>
       <p className="lists-hint">Directorio de clientes.</p>
+      <div className="ventas-filtros-grid clientes-filtros-grid form-field-stack">
+        <div className="form-field-stack">
+          <label className="form-field-label" htmlFor="clientes-filtro-texto">
+            Buscar por nombre
+          </label>
+          <input
+            id="clientes-filtro-texto"
+            type="search"
+            autoComplete="off"
+            value={filtroTexto}
+            onChange={(e) => setFiltroTexto(e.target.value)}
+          />
+        </div>
+        <div className="form-field-stack">
+          <label className="form-field-label" htmlFor="clientes-filtro-persona">
+            Cliente de
+          </label>
+          <select
+            id="clientes-filtro-persona"
+            className="venta-cliente-persona-filter"
+            value={filtroPersona}
+            onChange={(e) => setFiltroPersona(e.target.value)}
+          >
+            <option value="">Todas las personas</option>
+            {VENTA_FILTRO_PERSONA_OPCIONES.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {(filtroTexto.trim() || filtroPersona.trim()) && (
+        <p className="lists-hint" style={{ marginTop: 0 }}>
+          {clientesFiltrados.length} cliente(s) que coinciden
+        </p>
+      )}
       <div className="table-wrap table-cards-mobile">
         <table className="data-table">
           <thead>
@@ -23,7 +76,12 @@ function ClientesList({ data, startEditCliente, confirmDeleteCliente }) {
                 <td colSpan={5}>Sin clientes aún.</td>
               </tr>
             )}
-            {data.clientes.map((c) => (
+            {data.clientes.length > 0 && clientesFiltrados.length === 0 && (
+              <tr>
+                <td colSpan={5}>Ningún cliente coincide con los filtros.</td>
+              </tr>
+            )}
+            {clientesFiltrados.map((c) => (
               <tr key={c.id}>
                 <td data-label="Nombre">{c.nombre}</td>
                 <td data-label="Teléfono">{c.telefono || '—'}</td>
