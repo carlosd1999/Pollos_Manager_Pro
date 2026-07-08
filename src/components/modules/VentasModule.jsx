@@ -20,6 +20,7 @@ export default function VentasModule(props) {
     confirmDeleteVenta,
     submitAbono,
     confirmDeleteAbono,
+    toggleVentaEntregada,
     guardarRepartoGastosObjetivo,
     liquidarRepartoBucket,
     deshacerUltimoRepartoPago,
@@ -55,6 +56,7 @@ export default function VentasModule(props) {
           confirmDeleteVenta={confirmDeleteVenta}
           submitAbono={submitAbono}
           confirmDeleteAbono={confirmDeleteAbono}
+          toggleVentaEntregada={toggleVentaEntregada}
           guardarRepartoGastosObjetivo={guardarRepartoGastosObjetivo}
           liquidarRepartoBucket={liquidarRepartoBucket}
           deshacerUltimoRepartoPago={deshacerUltimoRepartoPago}

@@ -1,3 +1,8 @@
+import {
+  CLIENTE_POLLO_PREFERENCIA_OPTIONS,
+  labelPreferenciaPollo,
+} from '../../constants/clientePolloPreferencia';
+
 function ClienteForm({
   form,
   setForm,
@@ -50,6 +55,32 @@ function ClienteForm({
           value={form.cliente.direccion}
           onChange={(e) => setForm({ ...form, cliente: { ...form.cliente, direccion: e.target.value } })}
         />
+      </div>
+      <div className="form-field-stack">
+        <label className="form-field-label" htmlFor="cliente-preferencia-pollo">
+          Tamaño de pollo preferido
+        </label>
+        <select
+          id="cliente-preferencia-pollo"
+          className={inputClass('cliente.preferencia_pollo')}
+          value={form.cliente.preferencia_pollo ?? ''}
+          onChange={(e) => {
+            setForm({ ...form, cliente: { ...form.cliente, preferencia_pollo: e.target.value } });
+            setFieldErrors((prev) => ({ ...prev, 'cliente.preferencia_pollo': '' }));
+          }}
+        >
+          {CLIENTE_POLLO_PREFERENCIA_OPTIONS.map((o) => (
+            <option key={o.value || 'empty'} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        {fieldErrors['cliente.preferencia_pollo'] && (
+          <p className="field-error">{fieldErrors['cliente.preferencia_pollo']}</p>
+        )}
+        <p className="lists-hint" style={{ marginTop: 4 }}>
+          Se muestra en ventas al apartar o entregar pollos a este cliente.
+        </p>
       </div>
       <div className="form-actions">
         {isEditing && (

@@ -28,11 +28,12 @@ create table if not exists lotes (
   created_at timestamptz default now()
 );
 
-create table if not exists clientes (
+  create table if not exists clientes (
   id bigint generated always as identity primary key,
   nombre text not null,
   telefono text,
   direccion text,
+  preferencia_pollo text,
   created_at timestamptz default now()
 );
 
@@ -64,6 +65,7 @@ create table if not exists ventas (
   saldo_pendiente numeric(12,2) default 0,
   estado_pago text default 'pendiente',
   venta_al_contado boolean not null default false,
+  entregado boolean not null default false,
   created_at timestamptz default now()
 );
 

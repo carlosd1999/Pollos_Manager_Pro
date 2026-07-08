@@ -49,6 +49,6 @@ export function createInitialForm() {
       primerAbono: '',
     },
     mortalidad: { fecha: today, lote_id: '', cantidad: '', motivo: '' },
-    cliente: { nombre: '', telefono: '', direccion: '' },
+    cliente: { nombre: '', telefono: '', direccion: '', preferencia_pollo: '' },
   };
 }

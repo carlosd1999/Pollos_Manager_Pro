@@ -12,6 +12,11 @@ import {
   totalPendienteRepartoLote,
 } from '../../lib/repartoLote';
 import {
+  clasificarTamanoPolloPorKg,
+  labelPreferenciaPolloCorto,
+  pesoPromedioPorPolloVenta,
+} from '../../constants/clientePolloPreferencia';
+import {
   VENTA_PAYMENT_METHOD_OPTIONS,
   VENTA_PAYMENT_METHOD_VALUES,
   labelMetodoPago,
@@ -62,6 +67,7 @@ function VentasList({
   confirmDeleteVenta,
   submitAbono,
   confirmDeleteAbono,
+  toggleVentaEntregada,
   filtroCicloLabel,
   guardarRepartoGastosObjetivo,
   liquidarRepartoBucket,
@@ -76,6 +82,13 @@ function VentasList({
   const [simGastos, setSimGastos] = useState('');
 
   const clienteNombre = (id) => data.clientes.find((c) => c.id === id)?.nombre || id;
+  const clientesMap = useMemo(() => {
+    const m = {};
+    (data.clientes || []).forEach((c) => {
+      m[c.id] = c;
+    });
+    return m;
+  }, [data.clientes]);
   const loteLabel = (id) => {
     const l = data.lotes.find((x) => x.id === id);
     return l ? `Lote ${l.numero_lote}` : id;
@@ -227,13 +240,13 @@ function VentasList({
 
   const totalDisponibleReparto = useMemo(() => {
     const totalRepartos = REPARTO_SOCIO_FILAS
-    .map(({ bucket }) => sumRepartoPagosLoteBucket(pagosRepartoLote, filtroLoteId, bucket))
-    .reduce((sum, item) => sum + item, 0);
+      .map(({ bucket }) => sumRepartoPagosLoteBucket(pagosRepartoLote, filtroLoteId, bucket))
+      .reduce((sum, item) => sum + item, 0);
 
     const montoCancelado = resumenVentas.totalCancelado;
 
     const rebajasSocio = REPARTO_SOCIO_FILAS.map(({ bucket }) => rebajasSocioPorBucket[bucket])
-    .reduce((sum, item) => sum + item, 0);
+      .reduce((sum, item) => sum + item, 0);
 
     return montoCancelado - totalRepartos - rebajasSocio;
   }, [resumenVentas.totalCancelado, pagosRepartoLote, rebajasSocioPorBucket, filtroLoteId]);
@@ -382,8 +395,8 @@ function VentasList({
         <table className="data-table ventas-main-table">
           <thead>
             <tr>
-              <th>Fecha</th>
               <th>Cliente</th>
+              <th>Pref. Peso</th>
               <th>Cant.</th>
               <th>Peso</th>
               <th>Total</th>
@@ -391,6 +404,7 @@ function VentasList({
               <th>Saldo</th>
               <th>Estado</th>
               <th>Pago</th>
+              <th className="ventas-col-entregado">Entregado</th>
               <th className="col-actions" title="Acciones sobre la venta">
                 Acciones
               </th>
@@ -399,23 +413,47 @@ function VentasList({
           <tbody>
             {data.ventas.length === 0 && (
               <tr>
-                <td colSpan={11}>Sin ventas aún.</td>
+                <td colSpan={12}>Sin ventas aún.</td>
               </tr>
             )}
             {data.ventas.length > 0 && ventasFiltradas.length === 0 && (
               <tr>
-                <td colSpan={11}>Ninguna venta en el lote seleccionado.</td>
+                <td colSpan={12}>Ninguna venta en el lote seleccionado.</td>
               </tr>
             )}
             {ventasFiltradas.map((v) => {
               const paid = effectivePaidVenta(v, data.abonos);
               const saldo = Math.max(0, Number(v.total_venta || 0) - paid);
               const list = abonosPorVenta[v.id] || [];
+              const cliente = clientesMap[v.cliente_id];
+              const pref = cliente?.preferencia_pollo || '';
+              const kgProm = pesoPromedioPorPolloVenta(v);
+              const tamanoReal = clasificarTamanoPolloPorKg(kgProm);
+              const entregado = Boolean(v.entregado);
               return (
                 <Fragment key={v.id}>
-                  <tr className="venta-row">
-                    <td data-label="Fecha">{v.fecha}</td>
+                  <tr className={['venta-row', entregado ? 'venta-row--entregada' : ''].filter(Boolean).join(' ')}>
                     <td data-label="Cliente">{clienteNombre(v.cliente_id)}</td>
+                    <td data-label="Pref. Peso">
+                      {pref ? (
+                        <span className={`preferencia-pollo-tag preferencia-pollo-tag--${pref}`}>
+                          {labelPreferenciaPolloCorto(pref)}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                      {tamanoReal && kgProm != null && (
+                        <span className="venta-peso-real-hint">
+                          {' '}
+                          Prom: {kgProm.toLocaleString('es-CR', { maximumFractionDigits: 2 })} kg
+                          {pref && tamanoReal !== pref ? (
+                            <span className="venta-peso-mismatch"> (distinto a pref.)</span>
+                          ) : pref && tamanoReal === pref ? (
+                            <span className="venta-peso-match"> ✓</span>
+                          ) : null}
+                        </span>
+                      )}
+                    </td>
                     <td data-label="Cant.">{v.cantidad}</td>
                     <td data-label="Peso">{formatPesoKg(v.peso_total)}</td>
                     <td data-label="Total">{formatColones(v.total_venta)}</td>
@@ -423,6 +461,17 @@ function VentasList({
                     <td data-label="Saldo">{formatColones(saldo)}</td>
                     <td data-label="Estado">{ESTADO_LABEL[v.estado_pago] || v.estado_pago}</td>
                     <td data-label="Pago">{labelMetodoPago(v.metodo_pago)}</td>
+                    <td className="ventas-col-entregado" data-label="Entregado">
+                      <button
+                        type="button"
+                        className={`reparto-check-btn venta-entrega-btn${entregado ? ' reparto-check-btn--done' : ''}`}
+                        title={entregado ? 'Marcar como pendiente de entrega' : 'Marcar como entregado'}
+                        aria-label={entregado ? 'Marcar como pendiente de entrega' : 'Marcar como entregado'}
+                        onClick={() => toggleVentaEntregada(v.id, !entregado)}
+                      >
+                        {entregado ? '✓' : ''}
+                      </button>
+                    </td>
                     <td className="col-actions" data-label="Acciones">
                       <div className="row-actions">
                         <button
@@ -458,7 +507,7 @@ function VentasList({
                   </tr>
                   {expandedId === v.id && (
                     <tr className="abonos-row">
-                      <td colSpan={11}>
+                      <td colSpan={12}>
                         <div className="abonos-panel">
                           <p className="lists-hint" style={{ marginTop: 0 }}>
                             Pollos disponibles en este lote (referencia):{' '}

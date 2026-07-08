@@ -628,6 +628,79 @@ table.admin-matrix {
   color: var(--pm-text-muted);
 }
 
+.preferencia-pollo-tag {
+  display: inline-block;
+  font-size: 0.78rem;
+  font-weight: 650;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.preferencia-pollo-tag--grande {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.preferencia-pollo-tag--mediano {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.preferencia-pollo-tag--pequeno {
+  background: #dcfce7;
+  color: #166534;
+}
+
+:root[data-theme='dark'] .preferencia-pollo-tag--grande {
+  background: #1e3a5f;
+  color: #93c5fd;
+}
+
+:root[data-theme='dark'] .preferencia-pollo-tag--mediano {
+  background: #422006;
+  color: #fcd34d;
+}
+
+:root[data-theme='dark'] .preferencia-pollo-tag--pequeno {
+  background: #14532d;
+  color: #86efac;
+}
+
+.venta-peso-real-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--pm-text-muted);
+}
+
+.venta-peso-match {
+  color: var(--pm-brand-700);
+  font-weight: 600;
+}
+
+.venta-peso-mismatch {
+  color: var(--pm-danger);
+  font-weight: 600;
+}
+
+.venta-row--entregada {
+  opacity: 0.72;
+}
+
+.venta-row--entregada td:first-child {
+  box-shadow: inset 3px 0 0 var(--pm-brand-500);
+}
+
+.ventas-col-entregado {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.venta-cliente-pref-hint {
+  margin-top: 6px;
+}
+
 .top-tabs {
   display: none;
 }

@@ -74,6 +74,10 @@ export function validateMortalidad(mortalidad) {
 export function validateCliente(cliente) {
   const errors = {};
   if (!cliente.nombre.trim()) errors['cliente.nombre'] = 'Debes ingresar el nombre del cliente';
+  const pref = cliente.preferencia_pollo ?? '';
+  if (pref !== '' && !['grande', 'mediano', 'pequeno'].includes(pref)) {
+    errors['cliente.preferencia_pollo'] = 'Preferencia de tamaño inválida';
+  }
   return { errors };
 }
 

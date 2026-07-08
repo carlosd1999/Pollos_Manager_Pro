@@ -3,6 +3,10 @@ import { formatColones } from '../../lib/formatCurrency';
 import { sortLotesOldestFirst } from '../../lib/business';
 import { normalizeDecimalString, parseDecimalNumber } from '../../lib/parseDecimalInput';
 import { formatPrecioKgForForm, roundedVentaTotalAndPrecioKg } from '../../lib/ventaPricing';
+import {
+  labelPreferenciaPollo,
+  labelPreferenciaPolloCorto,
+} from '../../constants/clientePolloPreferencia';
 import { VENTA_PAYMENT_METHOD_OPTIONS } from '../../constants/payments';
 import {
   VENTA_FILTRO_PERSONA_OPCIONES,
@@ -201,6 +205,9 @@ function VentaForm({
         {clientesParaSelect.map((cliente) => (
           <option key={cliente.id} value={cliente.id}>
             {cliente.nombre}
+            {cliente.preferencia_pollo
+              ? ` · ${labelPreferenciaPolloCorto(cliente.preferencia_pollo)}`
+              : ''}
           </option>
         ))}
       </select>
@@ -214,6 +221,18 @@ function VentaForm({
         </p>
       )}
       {fieldErrors['venta.cliente_id'] && <p className="field-error">{fieldErrors['venta.cliente_id']}</p>}
+      {form.venta.cliente_id && (() => {
+        const sel = (data.clientes || []).find((c) => String(c.id) === String(form.venta.cliente_id));
+        if (!sel?.preferencia_pollo) return null;
+        return (
+          <p className="lists-hint venta-cliente-pref-hint">
+            Prefiere pollos:{' '}
+            <span className={`preferencia-pollo-tag preferencia-pollo-tag--${sel.preferencia_pollo}`}>
+              {labelPreferenciaPollo(sel.preferencia_pollo)}
+            </span>
+          </p>
+        );
+      })()}
     </div>
   );
 
@@ -469,6 +488,20 @@ function VentaForm({
           <span>Cantidad</span>
           <strong>{form.venta.cantidad} pollo(s)</strong>
         </li>
+        {(() => {
+          const sel = (data.clientes || []).find((c) => String(c.id) === String(form.venta.cliente_id));
+          if (!sel?.preferencia_pollo) return null;
+          return (
+            <li>
+              <span>Pref. pollo</span>
+              <strong>
+                <span className={`preferencia-pollo-tag preferencia-pollo-tag--${sel.preferencia_pollo}`}>
+                  {labelPreferenciaPollo(sel.preferencia_pollo)}
+                </span>
+              </strong>
+            </li>
+          );
+        })()}
       </ul>
     </div>
   ) : null;

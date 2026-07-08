@@ -1,3 +1,4 @@
+import { labelPreferenciaPolloCorto } from '../../constants/clientePolloPreferencia';
 import { IconEditar, IconEliminar } from '../icons/RowActionIcons';
 
 function ClientesList({ data, startEditCliente, confirmDeleteCliente }) {
@@ -12,13 +13,14 @@ function ClientesList({ data, startEditCliente, confirmDeleteCliente }) {
               <th>Nombre</th>
               <th>Teléfono</th>
               <th>Dirección</th>
+              <th>Pref. pollo</th>
               <th className="col-actions">Acciones</th>
             </tr>
           </thead>
           <tbody>
             {data.clientes.length === 0 && (
               <tr>
-                <td colSpan={4}>Sin clientes aún.</td>
+                <td colSpan={5}>Sin clientes aún.</td>
               </tr>
             )}
             {data.clientes.map((c) => (
@@ -26,6 +28,15 @@ function ClientesList({ data, startEditCliente, confirmDeleteCliente }) {
                 <td data-label="Nombre">{c.nombre}</td>
                 <td data-label="Teléfono">{c.telefono || '—'}</td>
                 <td data-label="Dirección">{c.direccion || '—'}</td>
+                <td data-label="Pref. pollo">
+                  {c.preferencia_pollo ? (
+                    <span className={`preferencia-pollo-tag preferencia-pollo-tag--${c.preferencia_pollo}`}>
+                      {labelPreferenciaPolloCorto(c.preferencia_pollo)}
+                    </span>
+                  ) : (
+                    '—'
+                  )}
+                </td>
                 <td className="col-actions" data-label="Acciones">
                   <div className="row-actions">
                     <button

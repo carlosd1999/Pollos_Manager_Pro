@@ -199,6 +199,7 @@ function App() {
     confirmDeleteCliente,
     submitAbono,
     confirmDeleteAbono,
+    toggleVentaEntregada,
     guardarRepartoGastosObjetivo,
     liquidarRepartoBucket,
     deshacerUltimoRepartoPago,
@@ -358,6 +359,7 @@ function App() {
           handleVenta={handleVenta}
           submitAbono={submitAbono}
           confirmDeleteAbono={confirmDeleteAbono}
+          toggleVentaEntregada={toggleVentaEntregada}
           guardarRepartoGastosObjetivo={guardarRepartoGastosObjetivo}
           liquidarRepartoBucket={liquidarRepartoBucket}
           deshacerUltimoRepartoPago={deshacerUltimoRepartoPago}

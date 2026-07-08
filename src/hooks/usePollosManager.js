@@ -731,6 +731,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
           nombre: form.cliente.nombre.trim(),
           telefono: form.cliente.telefono.trim(),
           direccion: form.cliente.direccion.trim(),
+          preferencia_pollo: form.cliente.preferencia_pollo?.trim() || null,
         });
         if (error) throw new Error(error.message);
         await readAll();
@@ -744,6 +745,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
         nombre: form.cliente.nombre.trim(),
         telefono: form.cliente.telefono.trim(),
         direccion: form.cliente.direccion.trim(),
+        preferencia_pollo: form.cliente.preferencia_pollo?.trim() || null,
       });
       if (error) throw new Error(error.message);
       await readAll();
@@ -822,6 +824,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
         nombre: c.nombre || '',
         telefono: c.telefono || '',
         direccion: c.direccion || '',
+        preferencia_pollo: c.preferencia_pollo || '',
       },
     });
     clearEditing();
@@ -829,6 +832,18 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
     setFieldErrors({});
     dismissStatus();
     scrollModuleFormIntoView();
+  };
+
+  const toggleVentaEntregada = async (ventaId, entregado) => {
+    if (!supabase || !user || rowOwnerId == null) return setErrorStatus('Debes iniciar sesion');
+    try {
+      const { error } = await updateVenta(ventaId, { entregado: Boolean(entregado) });
+      if (error) throw new Error(error.message);
+      await readAll();
+      setSuccessStatus(entregado ? 'Venta marcada como entregada' : 'Entrega desmarcada');
+    } catch (error) {
+      setErrorStatus(`No se pudo actualizar la entrega: ${error.message}`);
+    }
   };
 
   const cancelOperacionesEdit = () => {
@@ -1161,6 +1176,7 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
     confirmDeleteCliente,
     submitAbono,
     confirmDeleteAbono,
+    toggleVentaEntregada,
     guardarRepartoGastosObjetivo,
     liquidarRepartoBucket,
     deshacerUltimoRepartoPago,
