@@ -7,7 +7,7 @@ export const VENTA_DEFAULT_APARTADO_TAB_NAMES = ['Carmen', 'Carlos', 'Cherania']
  * Personas para filtrar la lista de clientes en el formulario de ventas
  * (coincidencia parcial en `cliente.nombre`, p. ej. texto entre paréntesis).
  */
-export const VENTA_FILTRO_PERSONA_OPCIONES = ['Carmen', 'Carlos', 'Auxi', 'Ligia', 'Cherania'];
+export const VENTA_FILTRO_PERSONA_OPCIONES = ['Carmen', 'Cherania', 'Carlos', 'Auxi', 'Ligia'];
 
 /** Arma el nombre guardado: `Karla` + `Ligia` → `Karla (Ligia)`. */
 export function buildClienteNombreConPersona(nombreBase, persona) {
