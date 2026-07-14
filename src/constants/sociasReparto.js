@@ -17,6 +17,12 @@ export const SOCIAS_REPARTO_TERCIO_COUNT = REPARTO_SOCIO_FILAS.length;
 
 export const REPARTO_BUCKETS_VALIDOS = [REPARTO_BUCKET_GASTOS, ...REPARTO_SOCIO_FILAS.map((r) => r.bucket)];
 
+/** Socia que cubre los gastos del negocio; su recuperación se muestra en reportes. */
+export const REPARTO_SOCIO_INVERSION_BUCKET = 'carlos';
+
+export const REPARTO_SOCIO_INVERSION_NOMBRE =
+  REPARTO_SOCIO_FILAS.find((r) => r.bucket === REPARTO_SOCIO_INVERSION_BUCKET)?.nombre || 'Carlos Martínez';
+
 export function labelRepartoBucket(bucket) {
   if (bucket === REPARTO_BUCKET_GASTOS) return 'Gastos a descontar';
   const r = REPARTO_SOCIO_FILAS.find((x) => x.bucket === bucket);

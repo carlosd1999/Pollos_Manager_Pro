@@ -39,6 +39,7 @@ create table if not exists public.user_module_access (
       'mortalidad',
       'clientes',
       'ciclos',
+      'alimentacion',
       'reportes'
     )
   )

@@ -307,7 +307,6 @@ function VentasList({
     let pollosPesados = 0;
     let kgPesados = 0;
     let totalColonesPesadas = 0;
-    console.log('ventasFiltradas', ventasFiltradas);
     for (const v of ventasFiltradas) {
       if (v.peso_total > 0) {
         const c = Number(v.cantidad || 0);

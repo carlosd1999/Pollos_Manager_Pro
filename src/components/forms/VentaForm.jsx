@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dayjs from 'dayjs';
 import { formatColones } from '../../lib/formatCurrency';
-import { sortLotesOldestFirst } from '../../lib/business';
+import { sortLotesOldestFirst, ventaEsApartadoSinPesar } from '../../lib/business';
 import { normalizeDecimalString, parseDecimalNumber } from '../../lib/parseDecimalInput';
 import { formatPrecioKgForForm, roundedVentaTotalAndPrecioKg } from '../../lib/ventaPricing';
 import {
@@ -322,7 +323,23 @@ function VentaForm({
             autoComplete="off"
             value={form.venta.peso_total}
             onChange={(e) => {
-              setForm((prev) => mergeVentaConRedondeo(prev, { peso_total: e.target.value }));
+              setForm((prev) => {
+                const prevPeso = normalizeDecimalString(prev.venta.peso_total);
+                const eraApartado = ventaEsApartadoSinPesar({
+                  peso_total: prevPeso === '' ? 0 : prevPeso,
+                  total_venta: prev.venta.total_redondeado === '' ? 0 : prev.venta.total_redondeado,
+                });
+                const next = mergeVentaConRedondeo(prev, { peso_total: e.target.value });
+                const nuevoPeso = normalizeDecimalString(next.venta.peso_total);
+                const ahoraConPeso = nuevoPeso !== '' && Number(nuevoPeso) > 0;
+                if (isEditing && eraApartado && ahoraConPeso) {
+                  return {
+                    ...next,
+                    venta: { ...next.venta, fecha: dayjs().format('YYYY-MM-DD') },
+                  };
+                }
+                return next;
+              });
               setFieldErrors((prev) => ({ ...prev, 'venta.peso_total': '' }));
             }}
           />
@@ -496,7 +513,7 @@ function VentaForm({
       <p className="venta-edicion-resumen-title">Datos de la venta (solo lectura)</p>
       <ul className="venta-edicion-resumen-list">
         <li>
-          <span>Fecha</span>
+          <span>Fecha (sacrificio)</span>
           <strong>{form.venta.fecha}</strong>
         </li>
         <li>
@@ -526,6 +543,9 @@ function VentaForm({
           );
         })()}
       </ul>
+      <p className="lists-hint" style={{ marginTop: 8 }}>
+        Al guardar el peso, la fecha de venta se actualiza al día del sacrificio ({form.venta.fecha}).
+      </p>
     </div>
   ) : null;
 

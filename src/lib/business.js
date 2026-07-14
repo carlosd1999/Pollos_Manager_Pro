@@ -80,7 +80,6 @@ export function resumenPendientesVentas(ventas, abonos) {
     cobroPendiente: 0,
     entregadas: 0,
   };
-  console.log('ventas', ventas.filter(item => item.entregado === false));
   for (const v of ventas || []) {
     if (ventaEsApartadoSinPesar(v)) r.sinPesar += Number(v.cantidad || 0);
     if (ventaPendienteEntrega(v)) {

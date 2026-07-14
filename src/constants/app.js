@@ -12,7 +12,7 @@ export const TABLES = [
 ];
 
 /** Pestañas principales (orden en barra de navegación). */
-export const MAIN_TABS = ['dashboard', 'ventas', 'gastos', 'mortalidad', 'clientes', 'ciclos', 'reportes'];
+export const MAIN_TABS = ['dashboard', 'ventas', 'gastos', 'mortalidad', 'clientes', 'ciclos', 'alimentacion', 'reportes'];
 
 export const TAB_LABELS = {
   dashboard: 'Inicio',
@@ -21,6 +21,7 @@ export const TAB_LABELS = {
   mortalidad: 'Mortalidad',
   clientes: 'Clientes',
   ciclos: 'Ciclos',
+  alimentacion: 'Dieta',
   reportes: 'Reportes',
   admin: 'Usuarios',
 };

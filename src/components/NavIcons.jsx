@@ -59,6 +59,15 @@ export function TabIcon({ tab }) {
           <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
         </svg>
       );
+    case 'alimentacion':
+      return (
+        <svg {...common}>
+          <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <path d="M12 11v6" />
+          <path d="M9 14h6" />
+        </svg>
+      );
     case 'reportes':
       return (
         <svg {...common}>

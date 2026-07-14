@@ -3,7 +3,7 @@ import dayjs from 'dayjs';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx';
 import { createInitialForm, TABLES } from '../constants/app';
-import { REPARTO_BUCKETS_VALIDOS, labelRepartoBucket } from '../constants/sociasReparto';
+import { REPARTO_BUCKETS_VALIDOS, REPARTO_SOCIO_INVERSION_NOMBRE, labelRepartoBucket } from '../constants/sociasReparto';
 import { formatColones } from '../lib/formatCurrency';
 import {
   calculateAvailableByLote,
@@ -16,13 +16,17 @@ import {
   pollosComprometidosPorLote,
   resumenPendientesVentas,
   sortLotesOldestFirst,
+  ventaEsApartadoSinPesar,
   VENTA_PAGO_EPS,
 } from '../lib/business';
 import {
   buildClienteNombreConPersona,
   parseClienteNombreConPersona,
 } from '../constants/ventaClientePersonas';
-import { parseDecimalNumber } from '../lib/parseDecimalInput';
+import { resumenEstadisticasVentas } from '../lib/reportesEstadisticasVentas';
+import { resumenFinancieroReportes } from '../lib/reportesFinancieros';
+import { labelNivelRendimiento } from '../lib/rendimientoAvicola';
+import { formatDiasEnGalera, formatGananciaDiaria, formatKg, formatPollos, formatPrecioKg } from '../lib/formatPeso';
 import { scrollModuleFormIntoView } from '../lib/scrollUi';
 import { supabase } from '../lib/supabase';
 import { friendlySupabaseError } from '../lib/supabaseErrors';
@@ -589,7 +593,6 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
           metodo_pago: venta.metodo_pago || null,
         };
         if (opts.soloPeso) {
-          updatePayload.fecha = existing.fecha;
           updatePayload.cliente_id = existing.cliente_id;
           updatePayload.lote_id = existing.lote_id;
           updatePayload.cantidad = Number(existing.cantidad);
@@ -602,6 +605,12 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
             updatePayload.peso_promedio =
               updatePayload.cantidad > 0 ? pesoTotal / updatePayload.cantidad : 0;
           }
+        }
+        const eraApartadoSinPesar = ventaEsApartadoSinPesar(existing);
+        if (eraApartadoSinPesar && pesoTotal > 0) {
+          updatePayload.fecha = opts.soloPeso
+            ? dayjs().format('YYYY-MM-DD')
+            : venta.fecha || dayjs().format('YYYY-MM-DD');
         }
         if (onlyLegacyPaid) {
           updatePayload.monto_cancelado = updatePayload.total_venta;
@@ -790,10 +799,11 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
   };
 
   const startEditVenta = (v) => {
+    const sinPesar = ventaEsApartadoSinPesar(v);
     setForm({
       ...createInitialForm(),
       venta: {
-        fecha: v.fecha,
+        fecha: sinPesar ? dayjs().format('YYYY-MM-DD') : v.fecha,
         cliente_id: v.cliente_id != null ? String(v.cliente_id) : '',
         lote_id: v.lote_id != null ? String(v.lote_id) : '',
         cantidad: String(v.cantidad),
@@ -1125,6 +1135,10 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
   const exportPDF = () => {
     const s = vistaCicloId ? statsVista : stats;
     const pend = ventasPendientesResumen;
+    const reporte = resumenFinancieroReportes(data);
+    const fin = reporte.general;
+    const inv = reporte.recuperacion.general;
+    const vs = resumenEstadisticasVentas(data).general;
     const doc = new jsPDF();
     doc.setFontSize(14);
     doc.text(
@@ -1133,13 +1147,39 @@ export function usePollosManager(user, rowOwnerId, { isAdmin = false } = {}) {
       10,
     );
     doc.setFontSize(11);
-    doc.text(`Ganancia total: ${formatColones(s.totalUtilidad)}`, 10, 20);
-    doc.text(`Mortalidad general: ${s.mortalidadGeneral.toFixed(2)}%`, 10, 27);
-    doc.text(`Total pollos comprados: ${s.totalComprados}`, 10, 34);
-    doc.text(`Ventas sin pesar: ${pend.sinPesar}`, 10, 41);
-    doc.text(`Ventas sin entregar: ${pend.sinEntregar} (${pend.pollosSinEntregar} pollos)`, 10, 48);
-    doc.text(`Ventas con cobro pendiente: ${pend.cobroPendiente}`, 10, 55);
-    doc.text(`Ventas entregadas: ${pend.entregadas}`, 10, 62);
+    let y = 20;
+    const line = (text) => {
+      doc.text(text, 10, y);
+      y += 7;
+    };
+    line(`Total gastado: ${formatColones(fin.totalGastos)}`);
+    line(`Total vendido: ${formatColones(fin.totalVentas)}`);
+    line(`Ganancia (ventas - gastos): ${formatColones(fin.ganancia)}`);
+    line(`Repartido a socias: ${formatColones(fin.repartoSocios)}`);
+    line(`Prom. gastos a descontar (por lote): ${formatColones(fin.repartoGastos)}`);
+    line(`Total movimientos reparto: ${formatColones(fin.repartoTotal)}`);
+    y += 3;
+    line(`--- Recuperacion ${REPARTO_SOCIO_INVERSION_NOMBRE} ---`);
+    line(`Invertido (gastos): ${formatColones(inv.totalInvertido)}`);
+    line(`Recuperado reparto: ${formatColones(inv.recuperadoRepartoCarlos)}`);
+    line(`Recuperado gastos lote: ${formatColones(inv.recuperadoGastosLotes)}`);
+    line(`Falta recuperar: ${formatColones(inv.faltaRecuperar)} (${inv.porcentajeRecuperado.toFixed(1)}%)`);
+    y += 3;
+    line('--- Estadisticas venta ---');
+    line(`Peso prom. por pollo: ${formatKg(vs.pesoPromedioPorPolloKg)}`);
+    line(`Dias prom. compra a sacrificio: ${formatDiasEnGalera(vs.diasPromedioEnGalera)}`);
+    if (vs.evaluacionRendimiento) {
+      line(`Rendimiento: ${labelNivelRendimiento(vs.evaluacionRendimiento.nivel)} (${formatGananciaDiaria(vs.evaluacionRendimiento.gananciaDiariaG)})`);
+    }
+    line(`Peso total vendido: ${formatKg(vs.kgPesados)}`);
+    line(`Precio prom. por kg: ${formatPrecioKg(vs.precioPromedioPorKg)}`);
+    line(`Prom. pollos por lote (${vs.lotesElegibles} lotes cerrados): ${formatPollos(vs.promPollosPorLote)}`);
+    y += 3;
+    line(`Ganancia KPI: ${formatColones(s.totalUtilidad)}`);
+    line(`Mortalidad general: ${s.mortalidadGeneral.toFixed(2)}%`);
+    line(`Pollos comprados: ${s.totalComprados}`);
+    line(`Sin pesar: ${pend.sinPesar} · Sin entregar: ${pend.sinEntregar}`);
+    line(`Cobro pendiente: ${pend.cobroPendiente} · Entregadas: ${pend.entregadas}`);
     doc.save(`pollos-reporte-${dayjs().format('YYYYMMDD-HHmm')}.pdf`);
   };
 

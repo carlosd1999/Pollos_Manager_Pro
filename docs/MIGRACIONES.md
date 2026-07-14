@@ -21,6 +21,7 @@ Ejecutá estos scripts **en orden** en el SQL Editor de Supabase (proyecto nuevo
 Si ya tenés la app en producción, ejecutá **solo** los scripts que aún no corriste. Los más recientes:
 
 - `supabase-cliente-preferencia-venta-entregado.sql` — necesario para preferencia de pollo y marcar entregas
+- `supabase-alimentacion-module.sql` — permiso del módulo **Dieta** en `user_module_access` (ejecutar y activar en Usuarios)
 
 ## Verificación rápida
 

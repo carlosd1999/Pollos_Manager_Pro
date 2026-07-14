@@ -25,5 +25,6 @@ export const PERMISSION_MODULE_KEYS = [
   'mortalidad',
   'clientes',
   'ciclos',
+  'alimentacion',
   'reportes',
 ];

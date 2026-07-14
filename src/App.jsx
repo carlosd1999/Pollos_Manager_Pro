@@ -9,6 +9,7 @@ import VentasModule from './components/modules/VentasModule';
 import MortalidadModule from './components/modules/MortalidadModule';
 import ClientesModule from './components/modules/ClientesModule';
 import CiclosModule from './components/modules/CiclosModule';
+import AlimentacionTab from './components/AlimentacionTab';
 import ReportesTab from './components/ReportesTab';
 import StatusHeader from './components/StatusHeader';
 import StatusMessageModal from './components/StatusMessageModal';
@@ -397,13 +398,10 @@ function App() {
         />
       )}
 
+      {tab === 'alimentacion' && <AlimentacionTab />}
+
       {tab === 'reportes' && (
-        <ReportesTab
-          data={vistaCicloId ? dataVista : data}
-          exportPDF={exportPDF}
-          exportExcel={exportExcel}
-          ventasPendientesResumen={ventasPendientesResumen}
-        />
+        <ReportesTab data={data} exportPDF={exportPDF} exportExcel={exportExcel} />
       )}
 
       {tab === 'admin' && isAdmin && (
